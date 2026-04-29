@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -389,9 +390,14 @@ function updateSaldoDisplay() {
   const totalGastos = state.expenses.reduce((s,e)=>s+(e.amount||0),0);
   const totalDepositos = state.deposits.reduce((s,d)=>s+(d.amount||0),0);
   const totalPagosLibres = state.pagosLibres.reduce((s,p)=>s+(p.amount||0),0);
-  const saldo = state.saldoBase + totalVentas + totalDepositos + totalPagosLibres - totalGastos;
+  // ✅ NUEVO: sumar abonos parciales de créditos AÚN NO liquidados
+  const totalAbonosParciales = state.creditSales
+    .filter(c => c.status !== 'pagado') // los liquidados ya generaron una venta en sales
+    .reduce((s,c) => s + (c.pagado||0), 0);
+  const saldo = state.saldoBase + totalVentas + totalDepositos + totalPagosLibres + totalAbonosParciales - totalGastos;
   document.querySelectorAll('#headerSaldo').forEach(el=>el.textContent=fmtMoney(saldo));
-}
+} 
+
 
 window.openSaldoModal = function() {
   const totalVentas = state.sales.reduce((s,v)=>s+(v.total||0),0);
@@ -1602,3 +1608,4 @@ renderTab();
 </script>
 </body>
 </html>
+
