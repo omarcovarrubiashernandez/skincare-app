@@ -390,20 +390,17 @@ function updateSaldoDisplay() {
   const totalGastos = state.expenses.reduce((s,e)=>s+(e.amount||0),0);
   const totalDepositos = state.deposits.reduce((s,d)=>s+(d.amount||0),0);
   const totalPagosLibres = state.pagosLibres.reduce((s,p)=>s+(p.amount||0),0);
-  // ✅ NUEVO: sumar abonos parciales de créditos AÚN NO liquidados
-  const totalAbonosParciales = state.creditSales
-    .filter(c => c.status !== 'pagado') // los liquidados ya generaron una venta en sales
-    .reduce((s,c) => s + (c.pagado||0), 0);
-  const saldo = state.saldoBase + totalVentas + totalDepositos + totalPagosLibres + totalAbonosParciales - totalGastos;
+  const saldo = state.saldoBase + totalVentas + totalDepositos + totalPagosLibres - totalGastos;
   document.querySelectorAll('#headerSaldo').forEach(el=>el.textContent=fmtMoney(saldo));
-} 
-
+}
 
 window.openSaldoModal = function() {
+ window.openSaldoModal = function() {
   const totalVentas = state.sales.reduce((s,v)=>s+(v.total||0),0);
   const totalGastos = state.expenses.reduce((s,e)=>s+(e.amount||0),0);
   const totalDepositos = state.deposits.reduce((s,d)=>s+(d.amount||0),0);
-  const saldoActual = state.saldoBase + totalVentas + totalDepositos - totalGastos;
+  const totalPagosLibres = state.pagosLibres.reduce((s,p)=>s+(p.amount||0),0);
+  const saldoActual = state.saldoBase + totalVentas + totalDepositos + totalPagosLibres - totalGastos;
   showModal('modalSaldo', `
     <div class="modal-header">
       <div class="modal-title">Saldo en cuenta</div>
@@ -426,6 +423,12 @@ window.openSaldoModal = function() {
         <div style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">+ Depósitos propios</div>
         <div style="font-weight:600;color:#3a5080;font-size:14px;">${fmtMoney(totalDepositos)}</div>
       </div>
+
+       <div style="background:#daeadd;border-radius:10px;padding:10px;text-align:center;">
+        <div style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">+ Pagos recibidos</div>
+        <div style="font-weight:600;color:var(--success);font-size:14px;">${fmtMoney(totalPagosLibres)}</div>
+      </div>
+
       <div style="background:var(--white);border-radius:10px;padding:10px;text-align:center;border:1px solid var(--cream-mid);">
         <div style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Base inicial</div>
         <div style="font-weight:600;color:var(--text);font-size:14px;">${fmtMoney(state.saldoBase)}</div>
@@ -1608,4 +1611,3 @@ renderTab();
 </script>
 </body>
 </html>
-
