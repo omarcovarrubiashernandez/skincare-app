@@ -367,7 +367,10 @@ async function addItem(col, data) { return await db.collection(col).add({...data
 async function updateItem(col, id, data) { return await db.collection(col).doc(id).update(data); }
 async function deleteItem(col, id) { return await db.collection(col).doc(id).delete(); }
 function listenCol(col, cb) {
-  return db.collection(col).onSnapshot(snap => cb(snap.docs.map(d=>({id:d.id,...d.data()}))));
+  return db.collection(col).onSnapshot(
+    snap => cb(snap.docs.map(d=>({id:d.id,...d.data()}))),
+    err => { console.warn('Firestore error en '+col+':', err.message); cb([]); }
+  );
 }
 
 // ── INIT ──────────────────────────────────
@@ -382,7 +385,16 @@ listenCol('pagosLibres', docs => { state.pagosLibres=docs.sort((a,b)=>(b.created
 db.collection('config').doc('saldo').get().then(snap=>{
   state.saldoBase = snap.exists?(snap.data().base||0):0;
   updateSaldoDisplay();
-});
+}).catch(()=>{});
+
+// Timeout de seguridad: si Firestore no responde en 5s, mostrar la app de todas formas
+setTimeout(()=>{
+  const c = document.getElementById('mainContent');
+  if(c && c.querySelector('.spinner')) {
+    renderTab();
+    toast('Sin conexión a la base de datos — modo offline','err');
+  }
+}, 5000);
 
 // ── SALDO EN CUENTA ───────────────────────
 function updateSaldoDisplay() {
@@ -403,8 +415,7 @@ window.openSaldoModal = function() {
   const totalVentas = state.sales.reduce((s,v)=>s+(v.total||0),0);
   const totalGastos = state.expenses.reduce((s,e)=>s+(e.amount||0),0);
   const totalDepositos = state.deposits.reduce((s,d)=>s+(d.amount||0),0);
-  const totalPagosLibres = state.pagosLibres.reduce((s,p)=>s+(p.amount||0),0);
-  const saldoActual = state.saldoBase + totalVentas + totalDepositos + totalPagosLibres - totalGastos;
+  const saldoActual = state.saldoBase + totalVentas + totalDepositos - totalGastos;
   showModal('modalSaldo', `
     <div class="modal-header">
       <div class="modal-title">Saldo en cuenta</div>
@@ -427,11 +438,7 @@ window.openSaldoModal = function() {
         <div style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">+ Depósitos propios</div>
         <div style="font-weight:600;color:#3a5080;font-size:14px;">${fmtMoney(totalDepositos)}</div>
       </div>
-      <div style="background:#daeadd;border-radius:10px;padding:10px;text-align:center;">
-        <div style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">+ Pagos recibidos</div>
-        <div style="font-weight:600;color:var(--success);font-size:14px;">${fmtMoney(totalPagosLibres)}</div>
-      </div>
-      <div style="background:var(--white);border-radius:10px;padding:10px;text-align:center;border:1px solid var(--cream-mid);grid-column:1/-1;">
+      <div style="background:var(--white);border-radius:10px;padding:10px;text-align:center;border:1px solid var(--cream-mid);">
         <div style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Base inicial</div>
         <div style="font-weight:600;color:var(--text);font-size:14px;">${fmtMoney(state.saldoBase)}</div>
       </div>
