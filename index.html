@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -349,6 +348,146 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
+// ══════════════════════════════════════════
+// CLOUDFLARE R2 — CONFIGURACIÓN
+// ══════════════════════════════════════════
+const R2_CONFIG = {
+  accountId:   '0b2e7767e0ee207dc616905c2c16eca4',
+  accessKeyId: '7ea097e43524d89b4aa9c7d839468f48',
+  secretKey:   '2843d255e4f1f08297ab47b0b9141c8dc724006b38e6f2f8f707d4cc28ed673f',
+  bucket:      'aplo-blossom-images',
+  publicUrl:   'https://pub-3d7d2139a4334439ae85eb5b2674f06d.r2.dev'
+};
+
+// ── Comprimir imagen antes de subir ──────
+async function compressImage(file, maxPx = 1080, quality = 0.90) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { naturalWidth: w, naturalHeight: h } = img;
+      // Redimensionar si excede maxPx en cualquier lado
+      if (w > maxPx || h > maxPx) {
+        const scale = Math.min(maxPx / w, maxPx / h);
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Compresión fallida')),
+        'image/jpeg', quality);
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+// ── Firma HMAC-SHA256 para AWS Signature V4 ──
+async function hmacSha256(key, data) {
+  const k = typeof key === 'string'
+    ? new TextEncoder().encode(key)
+    : key;
+  const cryptoKey = await crypto.subtle.importKey('raw', k,
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return crypto.subtle.sign('HMAC', cryptoKey,
+    new TextEncoder().encode(data));
+}
+
+async function sha256Hex(data) {
+  const buf = data instanceof ArrayBuffer ? data
+    : (data instanceof Blob ? await data.arrayBuffer()
+      : new TextEncoder().encode(data));
+  const hash = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+// ── Subir a Cloudflare R2 (AWS S3-compatible, Signature V4) ──
+async function uploadToR2(file) {
+  // 1. Comprimir
+  const compressed = await compressImage(file);
+
+  // 2. Generar nombre único
+  const ext = 'jpg';
+  const key = `products/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+
+  // 3. Preparar variables de firma
+  const region = 'auto';
+  const service = 's3';
+  const endpoint = `https://${R2_CONFIG.accountId}.r2.cloudflarestorage.com`;
+  const host = `${R2_CONFIG.accountId}.r2.cloudflarestorage.com`;
+
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:\-]|\.\d{3}/g,'').slice(0,15) + 'Z';
+  const dateStamp = amzDate.slice(0,8);
+
+  const payloadHash = await sha256Hex(compressed);
+  const contentType = 'image/jpeg';
+
+  // 4. Headers canónicos (deben estar ordenados alfabéticamente)
+  const canonicalHeaders =
+    `content-type:${contentType}\n` +
+    `host:${host}\n` +
+    `x-amz-content-sha256:${payloadHash}\n` +
+    `x-amz-date:${amzDate}\n`;
+
+  const signedHeaders = 'content-type;host;x-amz-content-sha256;x-amz-date';
+
+  // 5. Canonical request
+  const canonicalRequest = [
+    'PUT',
+    '/' + R2_CONFIG.bucket + '/' + key,
+    '',
+    canonicalHeaders,
+    signedHeaders,
+    payloadHash
+  ].join('\n');
+
+  // 6. String to sign
+  const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
+  const stringToSign = [
+    'AWS4-HMAC-SHA256',
+    amzDate,
+    credentialScope,
+    await sha256Hex(canonicalRequest)
+  ].join('\n');
+
+  // 7. Calcular firma
+  const kDate    = await hmacSha256('AWS4' + R2_CONFIG.secretKey, dateStamp);
+  const kRegion  = await hmacSha256(kDate, region);
+  const kService = await hmacSha256(kRegion, service);
+  const kSigning = await hmacSha256(kService, 'aws4_request');
+  const sigBytes = await hmacSha256(kSigning, stringToSign);
+  const signature = Array.from(new Uint8Array(sigBytes))
+    .map(b => b.toString(16).padStart(2,'0')).join('');
+
+  // 8. Authorization header
+  const authorization =
+    `AWS4-HMAC-SHA256 Credential=${R2_CONFIG.accessKeyId}/${credentialScope},` +
+    `SignedHeaders=${signedHeaders},Signature=${signature}`;
+
+  // 9. PUT request
+  const res = await fetch(`${endpoint}/${R2_CONFIG.bucket}/${key}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': contentType,
+      'x-amz-date': amzDate,
+      'x-amz-content-sha256': payloadHash,
+      'Authorization': authorization
+    },
+    body: compressed
+  });
+
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`R2 upload failed ${res.status}: ${txt}`);
+  }
+
+  // 10. Retornar URL pública
+  return `${R2_CONFIG.publicUrl}/${key}`;
+}
+
 // ── HELPERS ──────────────────────────────
 const fmt = n => {
   const v = Math.round((+n || 0) * 100) / 100;
@@ -390,14 +529,12 @@ function updateSaldoDisplay() {
   const totalGastos = state.expenses.reduce((s,e)=>s+(e.amount||0),0);
   const totalDepositos = state.deposits.reduce((s,d)=>s+(d.amount||0),0);
   const totalPagosLibres = state.pagosLibres.reduce((s,p)=>s+(p.amount||0),0);
-  // ✅ NUEVO: sumar abonos parciales de créditos AÚN NO liquidados
   const totalAbonosParciales = state.creditSales
-    .filter(c => c.status !== 'pagado') // los liquidados ya generaron una venta en sales
+    .filter(c => c.status !== 'pagado')
     .reduce((s,c) => s + (c.pagado||0), 0);
   const saldo = state.saldoBase + totalVentas + totalDepositos + totalPagosLibres + totalAbonosParciales - totalGastos;
   document.querySelectorAll('#headerSaldo').forEach(el=>el.textContent=fmtMoney(saldo));
-} 
-
+}
 
 window.openSaldoModal = function() {
   const totalVentas = state.sales.reduce((s,v)=>s+(v.total||0),0);
@@ -658,8 +795,10 @@ window.openProductModal = function(id) {
   const p = editingProduct||{};
   showModal('modalProduct',`
     <div class="modal-header"><div class="modal-title">${id?'Editar producto':'Nuevo producto'}</div><button class="modal-close" onclick="closeModal('modalProduct')">×</button></div>
-    <label for="imgFileInput" class="img-upload">
-      ${p.image?`<img src="${p.image}" style="width:100%;height:100%;object-fit:cover;">`:`<div style="display:flex;flex-direction:column;align-items:center;gap:8px;">${icons.camera}<span>Subir foto</span></div>`}
+    <label for="imgFileInput" class="img-upload" id="imgUploadLabel">
+      ${p.image
+        ? `<img src="${p.image}" style="width:100%;height:100%;object-fit:cover;">`
+        : `<div style="display:flex;flex-direction:column;align-items:center;gap:8px;">${icons.camera}<span>Subir foto</span></div>`}
     </label>
     <input type="file" id="imgFileInput" accept="image/*" style="display:none" onchange="window._handleImg(this)">
     <input type="hidden" id="pImgData" value="${p.image||''}">
@@ -704,20 +843,22 @@ window._toggleSkin=function(s){
   else{chips.forEach(b=>{if(b.textContent==='Todo tipo')b.classList.remove('active');});chips.forEach(b=>{if(b.textContent===s)b.classList.toggle('active');});}
 };
 
-window._handleImg=async function(input){
-  const file=input.files[0];if(!file)return;
-  const label=input.previousElementSibling;
-  label.innerHTML=`<span style="color:var(--text-light);">Subiendo...</span>`;
-  try{const url=await uploadToCloudinary(file);document.getElementById('pImgData').value=url;label.innerHTML=`<img src="${url}" style="width:100%;height:100%;object-fit:cover;">`;}
-  catch(e){label.innerHTML=`<span style="color:var(--danger);">Error al subir</span>`;toast('Error al subir imagen','err');}
+// ── Manejador de imagen con R2 ────────────
+window._handleImg = async function(input) {
+  const file = input.files[0]; if(!file) return;
+  const label = document.getElementById('imgUploadLabel');
+  label.innerHTML = `<span style="color:var(--text-light);font-size:13px;">⏳ Comprimiendo y subiendo...</span>`;
+  try {
+    const url = await uploadToR2(file);
+    document.getElementById('pImgData').value = url;
+    label.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;">`;
+    toast('Imagen subida ✓');
+  } catch(e) {
+    console.error(e);
+    label.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:8px;">${icons.camera}<span style="color:var(--danger);font-size:12px;">Error al subir — intenta de nuevo</span></div>`;
+    toast('Error al subir imagen', 'err');
+  }
 };
-
-async function uploadToCloudinary(file) {
-  const fd=new FormData();fd.append('file',file);fd.append('upload_preset','aplo_blossom');
-  const res=await fetch('https://api.cloudinary.com/v1_1/dwujv968b/image/upload',{method:'POST',body:fd});
-  if(!res.ok)throw new Error('Upload failed');
-  return (await res.json()).secure_url;
-}
 
 window.saveProduct=async function(id){
   const name=document.getElementById('pName').value.trim();
@@ -745,7 +886,7 @@ window.openKitModal=function(id){
   const selectedItems=k.kitItems?[...k.kitItems]:[];
   showModal('modalKit',`
     <div class="modal-header"><div class="modal-title">${id?'Editar kit':'Nuevo kit'}</div><button class="modal-close" onclick="closeModal('modalKit')">×</button></div>
-    <label for="kitImgInput" class="img-upload">
+    <label for="kitImgInput" class="img-upload" id="kitImgUploadLabel">
       ${k.image?`<img src="${k.image}" style="width:100%;height:100%;object-fit:cover;">`:`<div style="display:flex;flex-direction:column;align-items:center;gap:8px;">${icons.camera}<span>Foto del kit</span></div>`}
     </label>
     <input type="file" id="kitImgInput" accept="image/*" style="display:none" onchange="window._handleKitImg(this)">
@@ -805,7 +946,23 @@ window._removeKitItem=function(idx){window._kitItems.splice(idx,1);window._rende
 window._addKitItem=function(id){if(!id)return;const ex=window._kitItems.find(i=>i.id===id);if(ex){ex.qty++;}else{window._kitItems.push({id,qty:1});}const inp=document.getElementById('kitProdSearch');if(inp)inp.value='';const dd=document.getElementById('kitSearchDropdown');if(dd)dd.style.display='none';window._renderKitItems();};
 window._kitSearchInput=function(val){const dd=document.getElementById('kitSearchDropdown');if(!dd)return;const regularProds=state.products.filter(p=>!p.isKit);const q=val.trim().toLowerCase();const filtered=q?regularProds.filter(p=>(p.name||'').toLowerCase().includes(q)):regularProds;if(!filtered.length){dd.innerHTML='<div style="padding:10px 14px;font-size:13px;color:var(--text-light);">Sin resultados</div>';dd.style.display='block';return;}dd.innerHTML=filtered.slice(0,20).map(p=>`<div onmousedown="window._addKitItem('${p.id}')" style="padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--cream-mid);display:flex;justify-content:space-between;" onmouseover="this.style.background='var(--cream)'" onmouseout="this.style.background='var(--white)'"><span>${p.name}</span><span style="font-size:11px;color:var(--text-light);">${p.stock||0} uds</span></div>`).join('');dd.style.display='block';};
 window._toggleKitSkin=function(s){const chips=document.querySelectorAll('#kitSkinChips .chip');if(s==='Todo tipo'||s==='No aplica'){chips.forEach(b=>b.classList.remove('active'));chips.forEach(b=>{if(b.textContent===s)b.classList.add('active');});}else{chips.forEach(b=>{if(b.textContent==='Todo tipo'||b.textContent==='No aplica')b.classList.remove('active');});chips.forEach(b=>{if(b.textContent===s)b.classList.toggle('active');});}};
-window._handleKitImg=async function(input){const file=input.files[0];if(!file)return;const label=input.previousElementSibling;label.innerHTML=`<span>Subiendo...</span>`;try{const url=await uploadToCloudinary(file);document.getElementById('kitImgData').value=url;label.innerHTML=`<img src="${url}" style="width:100%;height:100%;object-fit:cover;">`;}catch(e){label.innerHTML=`<span style="color:var(--danger);">Error</span>`;toast('Error al subir','err');}};
+
+window._handleKitImg = async function(input) {
+  const file = input.files[0]; if(!file) return;
+  const label = document.getElementById('kitImgUploadLabel');
+  label.innerHTML = `<span style="color:var(--text-light);font-size:13px;">⏳ Subiendo...</span>`;
+  try {
+    const url = await uploadToR2(file);
+    document.getElementById('kitImgData').value = url;
+    label.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;">`;
+    toast('Imagen subida ✓');
+  } catch(e) {
+    console.error(e);
+    label.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:8px;">${icons.camera}<span style="color:var(--danger);font-size:12px;">Error</span></div>`;
+    toast('Error al subir', 'err');
+  }
+};
+
 window.saveKit=async function(id){const name=document.getElementById('kitName').value.trim();if(!name){toast('Escribe el nombre','err');return;}const totalUnits=window._kitItems.reduce((s,i)=>s+i.qty,0);if(totalUnits<2){toast('El kit debe tener al menos 2 unidades','err');return;}const price=+document.getElementById('kitPrice').value||0;const stock=+document.getElementById('kitStock').value||0;const data={name,isKit:true,category:'Kits',skin:Array.from(document.querySelectorAll('#kitSkinChips .chip.active')).map(b=>b.textContent).filter(Boolean),description:document.getElementById('kitDesc').value,price,stock,cost:0,kitItems:[...window._kitItems],image:document.getElementById('kitImgData').value||''};if(id){await updateItem('products',id,data);toast('Kit actualizado');}else{await addItem('products',data);toast('Kit creado');}closeModal('modalKit');};
 
 window.openStockModal=function(id){
@@ -993,7 +1150,6 @@ window.convertToSale=async function(id){
   toast('¡Venta registrada!');const qLocal=state.quotes.find(x=>x.id===id);if(qLocal)qLocal.status='vendida';
 };
 
-// ── Convertir a crédito (abono) ────────────
 window.convertToCredit=function(id){
   const q=state.quotes.find(x=>x.id===id);if(!q)return;
   showModal('modalCredit',`
@@ -1013,14 +1169,12 @@ window.saveCreditSale=async function(quoteId){
     client:q.client||'',items:q.items||[],total:q.total||0,pagado,pendiente:q.total-pagado,
     pagos,status:'pendiente',date:new Date().toISOString()
   });
-  // Descontar stock
   for(const item of (q.items||[])){const p=state.products.find(x=>x.id===item.id);if(p)await updateItem('products',p.id,{stock:Math.max(0,(p.stock||0)-item.qty)});}
   await updateItem('quotes',quoteId,{status:'vendida'});
   toast('Venta a crédito registrada ✓');
   closeModal('modalCredit');
 };
 
-// ── PDF COTIZACIÓN ────────────────────────
 window.downloadQuotePDF=function(id){
   const q=state.quotes.find(x=>x.id===id);if(!q)return;
   const{jsPDF}=window.jspdf;const doc=new jsPDF({format:'a4'});
@@ -1148,7 +1302,6 @@ function renderCreditCard(c, done=false) {
       </div>
       <span class="pill ${done?'pill-sold':'pill-pending'}">${done?'Liquidada':'Pendiente'}</span>
     </div>
-    <!-- Progress -->
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;text-align:center;">
       <div style="background:var(--cream-dark);border-radius:8px;padding:8px;">
         <div style="font-size:10px;color:var(--text-light);margin-bottom:2px;">Total</div>
@@ -1163,7 +1316,6 @@ function renderCreditCard(c, done=false) {
         <div style="font-family:'Playfair Display',serif;font-size:16px;color:${(c.pendiente||0)>0?'#7a6230':'var(--success)'};">${fmtMoney(c.pendiente||0)}</div>
       </div>
     </div>
-    <!-- Barra de progreso -->
     <div style="margin-bottom:12px;">
       <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
         <span style="font-size:11px;color:var(--text-light);">Progreso de pago</span>
@@ -1173,7 +1325,6 @@ function renderCreditCard(c, done=false) {
         <div style="height:100%;width:${pct}%;background:var(--olive);border-radius:10px;transition:width .5s;"></div>
       </div>
     </div>
-    <!-- Historial de abonos -->
     ${(c.pagos||[]).length>0?`
     <div style="margin-bottom:12px;">
       <div style="font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--text-light);margin-bottom:6px;">Historial de abonos</div>
@@ -1187,7 +1338,6 @@ function renderCreditCard(c, done=false) {
         <span style="font-weight:700;color:var(--success);font-size:14px;">+${fmtMoney(p.amount)}</span>
       </div>`).join('')}
     </div>`:''}
-    <!-- Acciones -->
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       ${!done?`<button class="btn btn-primary btn-sm" onclick="openAbonoModal('${c.id}')">+ Registrar abono</button>`:''}
       <button class="btn btn-danger btn-sm" onclick="deleteCreditSale('${c.id}')">Eliminar</button>
@@ -1217,7 +1367,6 @@ window.saveAbono=async function(id){
   const pagado=(c.pagado||0)+amount;
   const pendiente=Math.max(0,(c.total||0)-pagado);
   const status=pendiente<=0?'pagado':'pendiente';
-  // Si se liquidó, registrar como venta real
   if(status==='pagado'){
     await addItem('sales',{client:c.client||'',items:c.items||[],total:c.total||0,date:new Date().toISOString(),note:'Crédito liquidado'});
     toast('¡Crédito liquidado! Venta registrada ✓');
@@ -1233,7 +1382,6 @@ window.deleteCreditSale=async function(id){
   await deleteItem('creditSales',id);toast('Eliminada');
 };
 
-// ── Pagos libres ──
 window.openPagoLibreModal=function(){
   showModal('modalPagoLibre',`
     <div class="modal-header"><div class="modal-title">Registrar pago recibido</div><button class="modal-close" onclick="closeModal('modalPagoLibre')">×</button></div>
@@ -1395,7 +1543,6 @@ function renderCatalog() {
   </div>`;
 }
 
-// ── Modal de opciones de exportación de imágenes ──
 window.openExportImagesModal=function(){
   showModal('modalExportImg',`
     <div class="modal-header"><div class="modal-title">Exportar imágenes</div><button class="modal-close" onclick="closeModal('modalExportImg')">×</button></div>
@@ -1417,7 +1564,6 @@ window.openExportImagesModal=function(){
   `);
 };
 
-// ── Exportar imágenes de alta calidad ──
 window.exportImages=async function(format='facebook'){
   const prods=state.products.filter(p=>p.image&&(p.stock||0)>0);
   if(!prods.length){toast('No hay productos con imagen en stock','err');return;}
@@ -1433,8 +1579,7 @@ window.exportImages=async function(format='facebook'){
   const makeCard=(p,imgBlob,fmt)=>new Promise(res=>{
     let W,H;
     if(fmt==='horizontal'){W=800;H=400;}
-    else{W=1080;H=1350;} // vertical and facebook
-    // Sin SCALE=2 para evitar crash de memoria con muchos productos
+    else{W=1080;H=1350;}
 
     const canvas=document.createElement('canvas');
     canvas.width=W;canvas.height=H;
@@ -1451,7 +1596,6 @@ window.exportImages=async function(format='facebook'){
       URL.revokeObjectURL(url);
       canvas.toBlob(blob=>{
         const fname=(p.name||'producto').replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g,'').trim().replace(/ +/g,'_');
-        // Liberar canvas de memoria
         canvas.width=1;canvas.height=1;
         res({fname:fname+'.jpg',blob});
       },'image/jpeg',0.92);
@@ -1462,11 +1606,8 @@ window.exportImages=async function(format='facebook'){
 
   function drawHorizontal(ctx,p,imgEl,W,H){
     const PAD=48,IMG_SIZE=H-PAD*2;
-    // BG
     ctx.fillStyle='#f5f0e8';ctx.fillRect(0,0,W,H);
-    // Decorative strip top
     ctx.fillStyle='#4a5240';ctx.fillRect(0,0,W,8);
-    // Image (contain, no crop)
     ctx.save();ctx.beginPath();ctx.roundRect(PAD,PAD,IMG_SIZE,IMG_SIZE,20);ctx.clip();
     ctx.fillStyle='#ede5d4';ctx.fillRect(PAD,PAD,IMG_SIZE,IMG_SIZE);
     const iw=imgEl.naturalWidth,ih=imgEl.naturalHeight;
@@ -1474,25 +1615,18 @@ window.exportImages=async function(format='facebook'){
     const dw=iw*sc,dh=ih*sc;
     ctx.drawImage(imgEl,PAD+(IMG_SIZE-dw)/2,PAD+(IMG_SIZE-dh)/2,dw,dh);
     ctx.restore();
-    // Divider
     ctx.strokeStyle='#d4b07a';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(IMG_SIZE+PAD*2,PAD*2);ctx.lineTo(IMG_SIZE+PAD*2,H-PAD*2);ctx.stroke();
-    // Text area
     const TX=IMG_SIZE+PAD*3,TW=W-TX-PAD;
     let ty=PAD+60;
-    // Brand
     ctx.fillStyle='#4a5240';ctx.font='700 22px Arial, sans-serif';ctx.letterSpacing='4px';
     ctx.fillText('APLO BLOSSOM',TX,ty);ctx.letterSpacing='0px';ty+=50;
-    // Name
     ctx.fillStyle='#1a1a14';ctx.font='700 44px Georgia, serif';
     const words=(p.name||'').split(' ');let line='';
     for(const w of words){const t=line+w+' ';if(ctx.measureText(t).width>TW&&line){ctx.fillText(line.trim(),TX,ty);line=w+' ';ty+=52;}else line=t;}
     ctx.fillText(line.trim(),TX,ty);ty+=62;
-    // Volume
     if(p.mlVal&&p.mlUnit!=='N/A'){ctx.fillStyle='#6b7560';ctx.font='500 26px Arial, sans-serif';ctx.fillText(p.mlVal+p.mlUnit,TX,ty);ty+=44;}
-    // Skin
     const skinArr=Array.isArray(p.skin)?p.skin.filter(s=>s!=='No aplica'):(p.skin&&p.skin!=='No aplica'?[p.skin]:[]);
     if(skinArr.length){ctx.fillStyle='#8a9480';ctx.font='400 22px Arial, sans-serif';ctx.fillText(skinArr.join(', '),TX,ty);ty+=40;}
-    // Description
     if(p.description){
       ctx.fillStyle='#5a5848';ctx.font='400 22px Arial, sans-serif';
       const priceY=H-PAD-40,maxDescY=priceY-60,lineH=32;
@@ -1500,22 +1634,18 @@ window.exportImages=async function(format='facebook'){
       for(const w of dwords){const t=dl+w+' ';if(ctx.measureText(t).width>TW&&dl){if(ty+lineH>maxDescY)break;ctx.fillText(dl.trim(),TX,ty);dl=w+' ';ty+=lineH;}else dl=t;}
       if(ty<=maxDescY)ctx.fillText(dl.trim(),TX,ty);
     }
-    // Price
     ctx.fillStyle='#4a5240';ctx.font='700 58px Georgia, serif';
     ctx.fillText(fmtMoney(p.price),TX,H-PAD-20);
   }
 
   function drawVertical(ctx,p,imgEl,W,H,isFacebook){
     const PAD=52;
-    // BG
     ctx.fillStyle='#f5f0e8';ctx.fillRect(0,0,W,H);
-    // Header bar
     ctx.fillStyle='#4a5240';ctx.fillRect(0,0,W,90);
     ctx.fillStyle='#f5f0e8';ctx.font='700 32px Georgia, serif';ctx.textAlign='center';
     ctx.fillText('Aplo Blossom',W/2,58);
     ctx.font='500 18px Arial, sans-serif';ctx.fillStyle='#8a9480';ctx.fillText('skincare & wellness',W/2,80);
     ctx.textAlign='left';
-    // Image area — large, covers majority of top
     const imgH=Math.round(H*0.54);
     ctx.save();ctx.beginPath();ctx.roundRect(PAD,110,W-PAD*2,imgH-110,24);ctx.clip();
     ctx.fillStyle='#ede5d4';ctx.fillRect(PAD,110,W-PAD*2,imgH-110);
@@ -1525,23 +1655,18 @@ window.exportImages=async function(format='facebook'){
     const dw=iw*sc,dh=ih*sc;
     ctx.drawImage(imgEl,PAD+(aW-dw)/2,110+(aH-dh)/2,dw,dh);
     ctx.restore();
-    // Decorative gold line
     ctx.strokeStyle='#b8955a';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(PAD,imgH+16);ctx.lineTo(W-PAD,imgH+16);ctx.stroke();
-    // Text area
     let ty=imgH+72;
     ctx.textAlign='center';
-    // Name
     ctx.fillStyle='#1a1a14';ctx.font='700 52px Georgia, serif';
     const TW=W-PAD*2;const words=(p.name||'').split(' ');let line='';
     for(const w of words){const t=line+w+' ';if(ctx.measureText(t).width>TW&&line){ctx.fillText(line.trim(),W/2,ty);line=w+' ';ty+=60;}else line=t;}
     ctx.fillText(line.trim(),W/2,ty);ty+=70;
-    // Volume & skin
     const meta=[];
     if(p.mlVal&&p.mlUnit!=='N/A')meta.push(p.mlVal+p.mlUnit);
     const skinArr=Array.isArray(p.skin)?p.skin.filter(s=>s!=='No aplica'):(p.skin&&p.skin!=='No aplica'?[p.skin]:[]);
     if(skinArr.length)meta.push(skinArr.join(', '));
     if(meta.length){ctx.fillStyle='#6b7560';ctx.font='500 28px Arial, sans-serif';ctx.fillText(meta.join(' · '),W/2,ty);ty+=48;}
-    // Description
     if(p.description){
       ctx.fillStyle='#5a5848';ctx.font='400 26px Arial, sans-serif';
       const priceY=H-80,maxDescY=priceY-90,lineH=38;
@@ -1549,7 +1674,6 @@ window.exportImages=async function(format='facebook'){
       for(const w of dwords){const t=dl+w+' ';if(ctx.measureText(t).width>TW*0.9&&dl){if(ty+lineH>maxDescY)break;ctx.fillText(dl.trim(),W/2,ty);dl=w+' ';ty+=lineH;}else dl=t;}
       if(ty<=maxDescY)ctx.fillText(dl.trim(),W/2,ty);
     }
-    // Price box
     const priceBoxH=80,priceBoxY=H-priceBoxH-20;
     ctx.fillStyle='#4a5240';ctx.roundRect(PAD,priceBoxY,W-PAD*2,priceBoxH,16);ctx.fill();
     ctx.fillStyle='#f5f0e8';ctx.font='700 50px Georgia, serif';ctx.textAlign='center';
@@ -1579,7 +1703,6 @@ window.exportImages=async function(format='facebook'){
   toast(`ZIP descargado (${count} imágenes en formato ${formatLabel})`);
 };
 
-// ── CSV Export ──
 window.exportStockExcel=function(){
   if(!state.products.length){toast('No hay productos','err');return;}
   const headers=['Nombre','Categoría','Tipo de piel','Cantidad','Unidad','Precio ($)','Costo ($)','Stock','Descripción','Imagen (URL)'];
@@ -1591,7 +1714,6 @@ window.exportStockExcel=function(){
   toast('Inventario exportado ✓');
 };
 
-// ── PDF Catálogo ──
 window.exportCatalog=function(onlyInStock){
   const prods=onlyInStock?state.products.filter(p=>(p.stock||0)>0):state.products;
   if(!prods.length){toast('Sin productos para exportar','err');return;}
@@ -1618,4 +1740,3 @@ renderTab();
 </script>
 </body>
 </html>
-
