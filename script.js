@@ -1203,17 +1203,22 @@ window.exportImages = async function(format = 'nuevo') {
 
   // Carga imagen via proxy CORS (resuelve R2)
   const loadImgEl = (url) => new Promise(res => {
+    let done = false;
+    const finish = (val) => { if (!done) { done = true; res(val); } };
+    // Timeout de 8 segundos por imagen
+    const timer = setTimeout(() => finish(null), 8000);
+
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.src = 'https://images.weserv.nl/?url=' + encodeURIComponent(url) + '&output=jpg&q=90';
-    img.onload = () => res(img);
+    img.onload = () => { clearTimeout(timer); finish(img); };
     img.onerror = () => {
       // Fallback directo
       const img2 = new Image();
       img2.crossOrigin = 'anonymous';
       img2.src = url;
-      img2.onload = () => res(img2);
-      img2.onerror = () => res(null);
+      img2.onload = () => { clearTimeout(timer); finish(img2); };
+      img2.onerror = () => { clearTimeout(timer); finish(null); };
     };
   });
 
@@ -1547,18 +1552,21 @@ window.exportCatalog=function(onlyInStock){
   
   const loadImg = p => new Promise(res => {
   if (!p.image) { res(null); return; }
+  let done = false;
+  const finish = (val) => { if (!done) { done = true; res(val); } };
+  const timer = setTimeout(() => finish(null), 8000);
   const img = new Image();
   img.crossOrigin = 'anonymous';
   // Proxy que añade headers CORS — resuelve el problema de R2
   img.src = 'https://images.weserv.nl/?url=' + encodeURIComponent(p.image) + '&output=jpg&q=85';
-  img.onload = () => res(img);
+  img.onload = () => { clearTimeout(timer); finish(img); };
   img.onerror = () => {
     // Fallback sin proxy
     const img2 = new Image();
     img2.crossOrigin = 'anonymous';
     img2.src = p.image;
-    img2.onload = () => res(img2);
-    img2.onerror = () => res(null);
+    img2.onload = () => { clearTimeout(timer); finish(img2); };
+    img2.onerror = () => { clearTimeout(timer); finish(null); };
   };
 });
 
@@ -1572,4 +1580,4 @@ window.closeModal=function(id){const el=document.getElementById('overlay_'+id);i
 function bindEvents(){}
 
 // ── INITIAL RENDER ────────────────────────
-renderTab();6eryd1
+renderTab();
