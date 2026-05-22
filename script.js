@@ -1289,13 +1289,8 @@ window.exportImages = async function(format = 'nuevo') {
     let ty = 108;
     for (const l of titleLines) { ctx.fillText(l, TITLE_X, ty); ty += tSize * 1.12; }
 
-    // ── Subtítulo "DETALLES" debajo del título ──
-    ctx.font = 'bold 28px Arial, sans-serif';
-    ctx.fillStyle = '#1a1814';
-    ctx.fillText('DETALLES', TITLE_X, ty + 10);
-
     // ── FOTO: izquierda, grande, ocupa la mayor parte del alto ──
-    const imgX = 30, imgY = ty + 48;
+    const imgX = 30, imgY = ty + 30;
     const imgW = 610, imgH = H - imgY - 30;
 
     ctx.save();
