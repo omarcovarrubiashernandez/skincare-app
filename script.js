@@ -1158,7 +1158,8 @@ function renderCatalog() {
   <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:28px;">
     <button class="btn btn-primary btn-full" onclick="exportCatalog(true)" style="padding:14px;font-size:15px;">📦 Exportar solo productos en stock</button>
     <button class="btn btn-outline btn-full" onclick="exportCatalog(false)" style="padding:14px;font-size:15px;">📋 Exportar catálogo completo</button>
-    <button class="btn btn-gold btn-full" onclick="openExportImagesModal()" style="padding:14px;font-size:15px;">🖼 Exportar imágenes (.zip)</button>
+    <button class="btn btn-gold btn-full" onclick="open
+    Modal()" style="padding:14px;font-size:15px;">🖼 Exportar imágenes (.zip)</button>
     <button class="btn btn-outline btn-full" onclick="exportStockExcel()" style="padding:14px;font-size:15px;">📊 Exportar inventario (.csv)</button>
   </div>
   <div style="font-family:'Playfair Display',serif;font-size:18px;margin-bottom:14px;color:var(--text);">Vista previa</div>
@@ -1184,62 +1185,243 @@ window.openExportImagesModal=function(){
     <div class="modal-header"><div class="modal-title">Exportar imágenes</div><button class="modal-close" onclick="closeModal('modalExportImg')">×</button></div>
     <div style="font-size:13px;color:var(--text-light);margin-bottom:16px;">Elige el formato de las imágenes del catálogo.</div>
     <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px;">
-      <button class="btn btn-outline btn-full" onclick="closeModal('modalExportImg');exportImages('horizontal')" style="padding:14px;text-align:left;display:flex;align-items:center;gap:12px;">
-        <span style="font-size:24px;">↔️</span>
-        <div><div style="font-weight:600;">Horizontal</div><div style="font-size:12px;color:var(--text-light);">800×400 px — imagen con foto a la izquierda y datos a la derecha</div></div>
-      </button>
-      <button class="btn btn-outline btn-full" onclick="closeModal('modalExportImg');exportImages('vertical')" style="padding:14px;text-align:left;display:flex;align-items:center;gap:12px;">
-        <span style="font-size:24px;">↕️</span>
-        <div><div style="font-weight:600;">Vertical</div><div style="font-size:12px;color:var(--text-light);">1080×1350 px — foto arriba, datos abajo</div></div>
-      </button>
-      <button class="btn btn-primary btn-full" onclick="closeModal('modalExportImg');exportImages('facebook')" style="padding:14px;text-align:left;display:flex;align-items:center;gap:12px;">
-        <span style="font-size:24px;">📘</span>
-        <div><div style="font-weight:600;">Facebook vertical</div><div style="font-size:12px;color:rgba(245,240,232,.75);">1080×1350 px optimizado para Facebook e Instagram</div></div>
+      <button class="btn btn-primary btn-full" onclick="closeModal('modalExportImg');exportImages('nuevo')" style="padding:14px;text-align:left;display:flex;align-items:center;gap:12px;">
+        <span style="font-size:24px;">🖼</span>
+        <div>
+          <div style="font-weight:600;">Formato catálogo</div>
+          <div style="font-size:12px;color:rgba(245,240,232,.75);">970×1200 px — título, foto, detalles y precio</div>
+        </div>
       </button>
     </div>
   `);
-};
+}
 
-window.exportImages=async function(format='facebook'){
-  const prods=state.products.filter(p=>p.image&&(p.stock||0)>0);
-  if(!prods.length){toast('No hay productos con imagen en stock','err');return;}
-  toast('Generando imágenes de alta calidad...');
+window.exportImages = async function(format = 'nuevo') {
+  const prods = state.products.filter(p => p.image && (p.stock || 0) > 0);
+  if (!prods.length) { toast('No hay productos con imagen en stock', 'err'); return; }
+  toast('Generando imágenes...');
 
-  function dataURLtoBlob(dataUrl){
-    const[header,b64]=dataUrl.split(',');const mime=header.match(/:(.*?);/)[1];
-    const binary=atob(b64);const arr=new Uint8Array(binary.length);
-    for(let i=0;i<binary.length;i++)arr[i]=binary.charCodeAt(i);
-    return new Blob([arr],{type:mime});
+  // Carga imagen via proxy CORS (resuelve R2)
+  const loadImgEl = (url) => new Promise(res => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = 'https://images.weserv.nl/?url=' + encodeURIComponent(url) + '&output=jpg&q=90';
+    img.onload = () => res(img);
+    img.onerror = () => {
+      // Fallback directo
+      const img2 = new Image();
+      img2.crossOrigin = 'anonymous';
+      img2.src = url;
+      img2.onload = () => res(img2);
+      img2.onerror = () => res(null);
+    };
+  });
+
+  // ── NUEVO DISEÑO (basado en tu imagen de referencia) ──
+  const makeCard = (p, imgEl) => new Promise(res => {
+    const W = 970, H = 1200;
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+
+    // Fondo beige claro
+    ctx.fillStyle = '#f0ece4';
+    ctx.fillRect(0, 0, W, H);
+
+    // ── Decoración: línea curva sutil (esquina superior izquierda) ──
+    ctx.strokeStyle = '#c8b89a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, 180);
+    ctx.quadraticCurveTo(60, 80, 180, 60);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, 230);
+    ctx.quadraticCurveTo(80, 100, 230, 70);
+    ctx.stroke();
+
+    // ── TITULO (arriba izquierda, tipografía serif grande) ──
+    const nombre = (p.name || '').toUpperCase();
+    ctx.fillStyle = '#1a1a14';
+    ctx.font = 'bold 88px Georgia, serif';
+    ctx.textAlign = 'left';
+    // Dividir título en líneas si es largo
+    const maxTitleW = 480;
+    const titleWords = nombre.split(' ');
+    let titleLines = [], titleLine = '';
+    for (const w of titleWords) {
+      const test = titleLine + w + ' ';
+      if (ctx.measureText(test).width > maxTitleW && titleLine) {
+        titleLines.push(titleLine.trim());
+        titleLine = w + ' ';
+      } else titleLine = test;
+    }
+    titleLines.push(titleLine.trim());
+    let ty = 100;
+    for (const l of titleLines) {
+      ctx.fillText(l, 48, ty);
+      ty += 88;
+    }
+
+    // ── DETALLES debajo del título ──
+    ctx.fillStyle = '#1a1a14';
+    ctx.font = 'bold 28px Georgia, serif';
+    ctx.fillText('DETALLES', 48, ty + 16);
+
+    // ── FOTO (izquierda, cuadrada redondeada) ──
+    const imgX = 30, imgY = ty + 50;
+    const imgSize = 560;
+    ctx.save();
+    ctx.beginPath();
+    roundRect(ctx, imgX, imgY, imgSize, imgSize, 24);
+    ctx.clip();
+    if (imgEl) {
+      const iw = imgEl.naturalWidth, ih = imgEl.naturalHeight;
+      const sc = Math.max(imgSize / iw, imgSize / ih);
+      const dw = iw * sc, dh = ih * sc;
+      ctx.drawImage(imgEl, imgX + (imgSize - dw) / 2, imgY + (imgSize - dh) / 2, dw, dh);
+    } else {
+      ctx.fillStyle = '#e0d8cc';
+      ctx.fillRect(imgX, imgY, imgSize, imgSize);
+    }
+    ctx.restore();
+
+    // ── LISTA DE DETALLES (derecha) ──
+    const listX = imgX + imgSize + 40;
+    const listW = W - listX - 30;
+    const listStartY = imgY + 30;
+
+    // Construir lista de detalles a mostrar
+    const detalles = [];
+    if (p.description) {
+      // Cada frase/línea de descripción como un item
+      const frases = p.description.split(/[.,;]/).map(s => s.trim()).filter(Boolean);
+      detalles.push(...frases);
+    }
+    if (p.mlVal && p.mlUnit !== 'N/A') detalles.push(p.mlVal + ' ' + p.mlUnit);
+    const skinArr = Array.isArray(p.skin)
+      ? p.skin.filter(s => s !== 'No aplica')
+      : (p.skin && p.skin !== 'No aplica' ? [p.skin] : []);
+    if (skinArr.length) detalles.push(skinArr.join(', '));
+    if (p.category) detalles.push(p.category);
+
+    // Si no hay detalles, poner texto placeholder
+    if (!detalles.length) detalles.push(p.name || '');
+
+    // Dibujar cada detalle estilo "A TEXTURED ABSTRACT / PIECE CAPTURING..."
+    ctx.fillStyle = '#1a1a14';
+    ctx.font = '500 26px Arial, sans-serif';
+    ctx.textAlign = 'left';
+    let dy = listStartY + 30;
+    const lineH = 34;
+    const itemGap = 52; // espacio entre items
+
+    for (let i = 0; i < Math.min(detalles.length, 6); i++) {
+      // Línea separadora sutil
+      ctx.strokeStyle = '#c8b89a';
+      ctx.lineWidth = 1;
+      if (i > 0) {
+        ctx.beginPath();
+        ctx.moveTo(listX, dy - 14);
+        ctx.lineTo(listX + listW, dy - 14);
+        ctx.stroke();
+      }
+
+      // Texto del detalle (con word wrap)
+      ctx.fillStyle = '#2a2820';
+      ctx.font = '500 24px Arial, sans-serif';
+      const words = detalles[i].toUpperCase().split(' ');
+      let line = '', linesWritten = 0;
+      for (const w of words) {
+        const test = line + w + ' ';
+        if (ctx.measureText(test).width > listW && line) {
+          ctx.fillText(line.trim(), listX, dy + linesWritten * lineH);
+          line = w + ' ';
+          linesWritten++;
+        } else line = test;
+      }
+      ctx.fillText(line.trim(), listX, dy + linesWritten * lineH);
+      dy += itemGap + (linesWritten > 0 ? linesWritten * lineH : 0);
+    }
+
+    // ── "ALL TYPE SKIN · Xml" al final de la lista ──
+    const metaBits = [];
+    if (skinArr.length) metaBits.push(skinArr.join(', ').toUpperCase());
+    if (p.mlVal && p.mlUnit !== 'N/A') metaBits.push(p.mlVal + p.mlUnit);
+    if (metaBits.length) {
+      ctx.strokeStyle = '#c8b89a';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(listX, dy - 14);
+      ctx.lineTo(listX + listW, dy - 14);
+      ctx.stroke();
+      ctx.fillStyle = '#8a7a60';
+      ctx.font = '400 24px Arial, sans-serif';
+      ctx.fillText(metaBits.join('  '), listX, dy);
+    }
+
+    // ── PRECIO (pill esquina inferior derecha) ──
+    const priceText = fmtMoney(p.price);
+    ctx.font = 'bold 56px Georgia, serif';
+    const priceW = ctx.measureText(priceText).width;
+    const pillW = priceW + 80, pillH = 90;
+    const pillX = W - pillW - 30, pillY = H - pillH - 30;
+
+    // Pill con borde
+    ctx.fillStyle = '#f0ece4';
+    ctx.strokeStyle = '#2a2820';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    roundRect(ctx, pillX, pillY, pillW, pillH, pillH / 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#2a2820';
+    ctx.font = 'bold 52px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(priceText, pillX + pillW / 2, pillY + 60);
+
+    canvas.toBlob(blob => {
+      const fname = (p.name || 'producto').replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g, '').trim().replace(/ +/g, '_');
+      canvas.width = 1; canvas.height = 1;
+      res({ fname: fname + '.jpg', blob });
+    }, 'image/jpeg', 0.92);
+  });
+
+  // Helper roundRect compatible con todos los browsers
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
   }
 
-  const makeCard=(p,imgBlob,fmt)=>new Promise(res=>{
-    let W,H;
-    if(fmt==='horizontal'){W=800;H=400;}
-    else{W=1080;H=1350;}
+  const zip = new JSZip();
+  let count = 0;
+  for (const p of prods) {
+    try {
+      const imgEl = await loadImgEl(p.image);
+      const result = await makeCard(p, imgEl);
+      if (result) { zip.file(result.fname, result.blob); count++; }
+      toast(`Procesando... ${count}/${prods.length}`);
+    } catch (e) { console.error(e); }
+  }
 
-    const canvas=document.createElement('canvas');
-    canvas.width=W;canvas.height=H;
-    const ctx=canvas.getContext('2d');
+  const zipBlob = await zip.generateAsync({ type: 'blob' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(zipBlob);
+  a.download = 'catalogo-aploblossom.zip';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 1000);
+  toast(`ZIP descargado (${count} imágenes)`);
+};
 
-    const imgEl = new Image();
-    imgEl.crossOrigin = 'anonymous';
-    const url=URL.createObjectURL(imgBlob);
-    imgEl.onload=()=>{
-      if(fmt==='horizontal'){
-        drawHorizontal(ctx,p,imgEl,W,H);
-      } else {
-        drawVertical(ctx,p,imgEl,W,H,fmt==='facebook');
-      }
-      URL.revokeObjectURL(url);
-      canvas.toBlob(blob=>{
-        const fname=(p.name||'producto').replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g,'').trim().replace(/ +/g,'_');
-        canvas.width=1;canvas.height=1;
-        res({fname:fname+'.jpg',blob});
-      },'image/jpeg',0.92);
-    };
-    imgEl.onerror=()=>res(null);
-    imgEl.src=url;
-  });
 
   function drawHorizontal(ctx,p,imgEl,W,H){
     const PAD=48,IMG_SIZE=H-PAD*2;
@@ -1361,8 +1543,26 @@ window.exportCatalog=function(onlyInStock){
   const drawHeader=()=>{doc.setFillColor(74,82,64);doc.rect(0,0,PW,18,'F');doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(245,240,232);doc.text('Aplo Blossom',ML,12);doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(184,149,90);doc.text(onlyInStock?'Productos en stock':'Catalogo completo',ML,16.5);doc.text(new Date().toLocaleDateString('es-MX',{month:'long',year:'numeric'}),PW-MR,16.5,{align:'right'});};
   const drawTableHeader=y=>{doc.setFillColor(220,213,196);doc.rect(ML,y,usableW,6.5,'F');doc.setFont('helvetica','bold');doc.setFontSize(7);doc.setTextColor(74,82,64);doc.text('Producto',COL_NAME,y+4.5);doc.text('Descripcion',COL_DESC,y+4.5);doc.text('Precio',COL_PRICE,y+4.5);return y+9;};
   drawHeader();let y=drawTableHeader(22);let rowCount=0;
-  const addRow=(p,imgData)=>{const IMG_H=22;const LINE_NAME=4.2;const nameClean=clean(p.name);const descClean=clean(p.description);const metaClean=clean([p.category,p.mlVal&&p.mlUnit!=='N/A'?p.mlVal+p.mlUnit:''].filter(Boolean).join(' · '));doc.setFont('helvetica','bold');doc.setFontSize(8);const nameLines=doc.splitTextToSize(nameClean,NAME_W);doc.setFont('helvetica','normal');doc.setFontSize(7);const descLines=descClean?doc.splitTextToSize(descClean,DESC_W):[];const nameH=nameLines.length*LINE_NAME+(metaClean?4.5:0);const descH=descLines.length*3.9;const rowH=Math.max(IMG_H,nameH,descH)+8;if(y+rowH>PH-14){doc.addPage();drawHeader();y=drawTableHeader(22);rowCount=0;}if(rowCount%2===1){doc.setFillColor(250,247,242);doc.rect(ML,y,usableW,rowH,'F');}const imgY=y+(rowH-IMG_H)/2;doc.setFillColor(237,229,212);doc.setDrawColor(210,203,188);doc.rect(COL_IMG,imgY,IMG_W,IMG_H,'FD');if(imgData){try{doc.addImage(imgData,'JPEG',COL_IMG,imgY,IMG_W,IMG_H);}catch(e){}}let tx=y+5;doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(30,30,24);nameLines.forEach(l=>{doc.text(l,COL_NAME,tx);tx+=LINE_NAME;});if(metaClean){doc.setFont('helvetica','normal');doc.setFontSize(6.5);doc.setTextColor(110,110,90);doc.text(metaClean,COL_NAME,tx);}let dtx=y+5;doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(80,78,68);descLines.slice(0,9).forEach(l=>{doc.text(l,COL_DESC,dtx);dtx+=3.9;});doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(74,82,64);doc.text(fmtMoney(p.price),COL_PRICE,y+6);doc.setDrawColor(222,214,200);doc.line(ML,y+rowH,PW-MR,y+rowH);y+=rowH;rowCount++;};
-  const loadImg=p=>new Promise(res=>{if(!p.image){res(null);return;}fetch(p.image).then(r=>r.blob()).then(blob=>{const rd=new FileReader();rd.onload=e=>res(e.target.result);rd.onerror=()=>res(null);rd.readAsDataURL(blob);}).catch(()=>res(null));});
+  const addRow=(p,imgData)=>{const IMG_H=22;const LINE_NAME=4.2;const nameClean=clean(p.name);const descClean=clean(p.description);const metaClean=clean([p.category,p.mlVal&&p.mlUnit!=='N/A'?p.mlVal+p.mlUnit:''].filter(Boolean).join(' · '));doc.setFont('helvetica','bold');doc.setFontSize(8);const nameLines=doc.splitTextToSize(nameClean,NAME_W);doc.setFont('helvetica','normal');doc.setFontSize(7);const descLines=descClean?doc.splitTextToSize(descClean,DESC_W):[];const nameH=nameLines.length*LINE_NAME+(metaClean?4.5:0);const descH=descLines.length*3.9;const rowH=Math.max(IMG_H,nameH,descH)+8;if(y+rowH>PH-14){doc.addPage();drawHeader();y=drawTableHeader(22);rowCount=0;}if(rowCount%2===1){doc.setFillColor(250,247,242);doc.rect(ML,y,usableW,rowH,'F');}const imgY=y+(rowH-IMG_H)/2;doc.setFillColor(237,229,212);doc.setDrawColor(210,203,188);doc.rect(COL_IMG,imgY,IMG_W,IMG_H,'FD');if(imgData){ try{ doc.addImage(imgData,COL_IMG,imgY,IMG_W,IMG_H); }catch(e){} }let tx=y+5;doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(30,30,24);nameLines.forEach(l=>{doc.text(l,COL_NAME,tx);tx+=LINE_NAME;});if(metaClean){doc.setFont('helvetica','normal');doc.setFontSize(6.5);doc.setTextColor(110,110,90);doc.text(metaClean,COL_NAME,tx);}let dtx=y+5;doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(80,78,68);descLines.slice(0,9).forEach(l=>{doc.text(l,COL_DESC,dtx);dtx+=3.9;});doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(74,82,64);doc.text(fmtMoney(p.price),COL_PRICE,y+6);doc.setDrawColor(222,214,200);doc.line(ML,y+rowH,PW-MR,y+rowH);y+=rowH;rowCount++;};
+  
+  const loadImg = p => new Promise(res => {
+  if (!p.image) { res(null); return; }
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  // Proxy que añade headers CORS — resuelve el problema de R2
+  img.src = 'https://images.weserv.nl/?url=' + encodeURIComponent(p.image) + '&output=jpg&q=85';
+  img.onload = () => res(img);
+  img.onerror = () => {
+    // Fallback sin proxy
+    const img2 = new Image();
+    img2.crossOrigin = 'anonymous';
+    img2.src = p.image;
+    img2.onload = () => res(img2);
+    img2.onerror = () => res(null);
+  };
+});
+
+  
   Promise.all(prods.map(loadImg)).then(imgs=>{prods.forEach((p,i)=>addRow(p,imgs[i]));doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(160,155,140);doc.text(prods.length+' productos · Aplo Blossom',PW/2,PH-6,{align:'center'});doc.save('catalogo-aploblossom-'+(onlyInStock?'disponible':'completo')+'.pdf');toast('PDF descargado');});
 };
 
@@ -1372,4 +1572,4 @@ window.closeModal=function(id){const el=document.getElementById('overlay_'+id);i
 function bindEvents(){}
 
 // ── INITIAL RENDER ────────────────────────
-renderTab();
+renderTab();6eryd1
