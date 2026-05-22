@@ -1233,69 +1233,79 @@ window.exportImages = async function(format = 'nuevo') {
     };
   });
 
-  // ── NUEVO DISEÑO (basado en tu imagen de referencia) ──
+  // ── DISEÑO ACTUALIZADO: imagen destaca a la izquierda, detalles a la derecha ──
   const makeCard = (p, imgEl) => new Promise(res => {
-    const W = 970, H = 1200;
+    const W = 970, H = 1100;
     const canvas = document.createElement('canvas');
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext('2d');
 
-    // Fondo beige claro
-    ctx.fillStyle = '#f0ece4';
+    // ── Fondo degradado suave crema-blanco ──
+    const grad = ctx.createLinearGradient(0, 0, W, H);
+    grad.addColorStop(0, '#fdfbf8');
+    grad.addColorStop(1, '#f5f0ea');
+    ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
 
-    // ── Decoración: línea curva sutil (esquina superior izquierda) ──
-    ctx.strokeStyle = '#c8b89a';
-    ctx.lineWidth = 2;
+    // ── Decoración: curvas finas esquina superior izquierda ──
+    ctx.strokeStyle = '#d4c4b0';
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(0, 180);
-    ctx.quadraticCurveTo(60, 80, 180, 60);
-    ctx.stroke();
+    ctx.moveTo(0, 160); ctx.quadraticCurveTo(55, 70, 170, 50); ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(0, 230);
-    ctx.quadraticCurveTo(80, 100, 230, 70);
-    ctx.stroke();
+    ctx.moveTo(0, 210); ctx.quadraticCurveTo(75, 95, 215, 65); ctx.stroke();
 
-    // ── TITULO: tamaño auto para caber en máx 3 líneas, ancho izquierdo ──
+    // ── TÍTULO: arriba a la izquierda, máx 1 línea con elipsis, tamaño moderado ──
     const nombre = (p.name || '').toUpperCase();
-    ctx.fillStyle = '#1a1a14';
+    ctx.fillStyle = '#1a1814';
     ctx.textAlign = 'left';
-    const maxTitleW = 480;
+    const TITLE_X = 48, TITLE_Y = 78;
+    const maxTitleW = W - TITLE_X - 30;
 
-    const calcTitleLines = (size) => {
-      ctx.font = 'bold ' + size + 'px Georgia, serif';
-      const words = nombre.split(' ');
-      let lines = [], cur = '';
-      for (const w of words) {
-        const test = cur + w + ' ';
-        if (ctx.measureText(test).width > maxTitleW && cur) {
-          lines.push(cur.trim()); cur = w + ' ';
-        } else cur = test;
+    // Calcular tamaño de fuente que quepa en 1 línea (con elipsis si no cabe en mínimo)
+    let tFontSize = 62;
+    ctx.font = 'bold ' + tFontSize + 'px Georgia, serif';
+    while (ctx.measureText(nombre).width > maxTitleW && tFontSize > 32) {
+      tFontSize -= 3;
+      ctx.font = 'bold ' + tFontSize + 'px Georgia, serif';
+    }
+    // Si aún no cabe, truncar con elipsis
+    let titleText = nombre;
+    if (ctx.measureText(titleText).width > maxTitleW) {
+      while (ctx.measureText(titleText + '…').width > maxTitleW && titleText.length > 1) {
+        titleText = titleText.slice(0, -1);
       }
-      lines.push(cur.trim());
-      return lines;
-    };
-
-    let fontSize = 88;
-    let titleLines = calcTitleLines(fontSize);
-    while (titleLines.length > 3 && fontSize > 32) {
-      fontSize -= 4;
-      titleLines = calcTitleLines(fontSize);
+      titleText += '…';
     }
+    ctx.fillText(titleText, TITLE_X, TITLE_Y);
 
-    ctx.font = 'bold ' + fontSize + 'px Georgia, serif';
-    let ty = 100;
-    for (const l of titleLines) {
-      ctx.fillText(l, 48, ty);
-      ty += fontSize * 1.1;
-    }
+    // ── Línea separadora fina debajo del título ──
+    const sepY = TITLE_Y + 18;
+    ctx.strokeStyle = '#d4c4b0';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(TITLE_X, sepY); ctx.lineTo(W - 48, sepY); ctx.stroke();
 
-    // ── FOTO (izquierda, cuadrada redondeada) ──
-    const imgX = 30, imgY = ty + 30;
-    const imgSize = 560;
+    // ── FOTO: izquierda, grande, con sombra y bordes redondeados ──
+    const imgX = 30, imgY = sepY + 28;
+    const imgSize = 590;
+
+    // Sombra de la imagen
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.18)';
+    ctx.shadowBlur = 28;
+    ctx.shadowOffsetX = 6;
+    ctx.shadowOffsetY = 8;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    roundRect(ctx, imgX, imgY, imgSize, imgSize, 22);
+    ctx.fill();
+    ctx.restore();
+
+    // Clip y dibujar imagen
     ctx.save();
     ctx.beginPath();
-    roundRect(ctx, imgX, imgY, imgSize, imgSize, 24);
+    roundRect(ctx, imgX, imgY, imgSize, imgSize, 22);
     ctx.clip();
     if (imgEl) {
       const iw = imgEl.naturalWidth, ih = imgEl.naturalHeight;
@@ -1303,16 +1313,25 @@ window.exportImages = async function(format = 'nuevo') {
       const dw = iw * sc, dh = ih * sc;
       ctx.drawImage(imgEl, imgX + (imgSize - dw) / 2, imgY + (imgSize - dh) / 2, dw, dh);
     } else {
-      ctx.fillStyle = '#e0d8cc';
+      ctx.fillStyle = '#e8e0d4';
       ctx.fillRect(imgX, imgY, imgSize, imgSize);
     }
     ctx.restore();
 
-    // ── LISTA DE DETALLES (derecha, sin líneas separadoras) ──
-    const listX = imgX + imgSize + 40;
-    const listW = W - listX - 30;
-    const listStartY = imgY + 30;
+    // ── DETALLES (columna derecha) ──
+    const colRX = imgX + imgSize + 38;
+    const colRW = W - colRX - 32;
 
+    // Helper: texto truncado con elipsis en 1 línea
+    const truncate1Line = (text, maxW, font) => {
+      ctx.font = font;
+      if (ctx.measureText(text).width <= maxW) return text;
+      let t = text;
+      while (ctx.measureText(t + '…').width > maxW && t.length > 1) t = t.slice(0, -1);
+      return t + '…';
+    };
+
+    // Construir lista de detalles
     const detalles = [];
     if (p.description) {
       const frases = p.description.split(/[.,;]/).map(s => s.trim()).filter(Boolean);
@@ -1327,46 +1346,77 @@ window.exportImages = async function(format = 'nuevo') {
     if (!detalles.length) detalles.push(p.name || '');
 
     ctx.textAlign = 'left';
-    let dy = listStartY + 30;
-    const lineH = 34;
-    const itemGap = 52;
+    const detFont = '500 22px Arial, sans-serif';
+    const lineH = 28;
+    const itemGap = 46;
+    let dy = imgY + 40;
 
-    for (let i = 0; i < Math.min(detalles.length, 6); i++) {
+    const maxItems = 6;
+    for (let i = 0; i < Math.min(detalles.length, maxItems); i++) {
+      // Punto decorativo
+      ctx.fillStyle = '#b8a898';
+      ctx.beginPath();
+      ctx.arc(colRX - 14, dy - 8, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Texto truncado a 2 líneas máximo
       ctx.fillStyle = '#2a2820';
-      ctx.font = '500 24px Arial, sans-serif';
-      const words = detalles[i].toUpperCase().split(' ');
-      let line = '', linesWritten = 0;
+      ctx.font = detFont;
+      const texto = detalles[i].toUpperCase();
+      const words = texto.split(' ');
+      let line1 = '', line2 = '', overflowLine = false;
       for (const w of words) {
-        const test = line + w + ' ';
-        if (ctx.measureText(test).width > listW && line) {
-          ctx.fillText(line.trim(), listX, dy + linesWritten * lineH);
-          line = w + ' ';
-          linesWritten++;
-        } else line = test;
+        const test = line1 + w + ' ';
+        if (ctx.measureText(test).width > colRW && line1) {
+          overflowLine = true;
+          line2 = w + ' ';
+          // Seguir llenando línea 2
+          const remainingWords = words.slice(words.indexOf(w) + 1);
+          for (const rw of remainingWords) {
+            const test2 = line2 + rw + ' ';
+            if (ctx.measureText(test2).width > colRW && line2) {
+              // Truncar línea 2 con elipsis
+              line2 = truncate1Line(line2.trim(), colRW, detFont) ;
+              break;
+            } else line2 = test2;
+          }
+          break;
+        } else line1 = test;
       }
-      ctx.fillText(line.trim(), listX, dy + linesWritten * lineH);
-      dy += itemGap + (linesWritten > 0 ? linesWritten * lineH : 0);
+      ctx.fillText(line1.trim(), colRX, dy);
+      if (overflowLine) {
+        ctx.fillText(line2.trim(), colRX, dy + lineH);
+        dy += itemGap + lineH;
+      } else {
+        dy += itemGap;
+      }
     }
 
-    // ── PRECIO (pill esquina inferior derecha) ──
+    // ── PRECIO: pill abajo a la derecha, tamaño moderado ──
     const priceText = fmtMoney(p.price);
-    ctx.font = 'bold 56px Georgia, serif';
+    ctx.font = 'bold 44px Georgia, serif';
     const priceW = ctx.measureText(priceText).width;
-    const pillW = priceW + 80, pillH = 90;
-    const pillX = W - pillW - 30, pillY = H - pillH - 30;
+    const pillW = priceW + 64, pillH = 72;
+    const pillX = W - pillW - 32, pillY = H - pillH - 32;
 
-    ctx.fillStyle = '#f0ece4';
+    // Sombra del pill
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.12)';
+    ctx.shadowBlur = 14;
+    ctx.shadowOffsetY = 4;
+    ctx.fillStyle = '#fff8f2';
     ctx.strokeStyle = '#2a2820';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 2.5;
     ctx.beginPath();
     roundRect(ctx, pillX, pillY, pillW, pillH, pillH / 2);
     ctx.fill();
     ctx.stroke();
+    ctx.restore();
 
     ctx.fillStyle = '#2a2820';
-    ctx.font = 'bold 52px Georgia, serif';
+    ctx.font = 'bold 42px Georgia, serif';
     ctx.textAlign = 'center';
-    ctx.fillText(priceText, pillX + pillW / 2, pillY + 60);
+    ctx.fillText(priceText, pillX + pillW / 2, pillY + 48);
 
     canvas.toBlob(blob => {
       const fname = (p.name || 'producto').replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g, '').trim().replace(/ +/g, '_');
