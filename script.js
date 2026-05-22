@@ -1,3 +1,8 @@
+window.onerror = function(msg, src, line, col, err) {
+  const c = document.getElementById('mainContent');
+  if(c) c.innerHTML = '<div style="padding:20px;color:red;font-size:13px;font-family:monospace;word-break:break-all;"><b>JS Error:</b><br>' + msg + '<br>Line: ' + line + '<br>' + (err&&err.stack?err.stack:'') + '</div>';
+};
+
 const firebaseConfig = {
   apiKey: "AIzaSyCSBO1WxMpDFakY-6zgygJAu6n6Hyp3W80",
   authDomain: "aplo-blossom.firebaseapp.com",
@@ -287,7 +292,8 @@ window.setTab = function(i) {
 function renderTab() {
   try {
     const c = document.getElementById('mainContent');
-    if(currentTab===0) { if(!document.getElementById('invList')) c.innerHTML=renderInventory(); renderInvList(); }
+    if(!c) return;
+    if(currentTab===0) { if(!document.getElementById('invList')) { c.innerHTML=renderInventory(); } renderInvList(); }
     else if(currentTab===1) { if(!document.getElementById('quoteGrid')) c.innerHTML=renderQuote(); renderQuoteGrid(); }
     else if(currentTab===2) c.innerHTML=renderSales();
     else if(currentTab===3) c.innerHTML=renderReports();
