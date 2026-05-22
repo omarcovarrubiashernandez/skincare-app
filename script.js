@@ -1248,26 +1248,21 @@ window.exportImages = async function(format = 'nuevo') {
     ctx.strokeStyle = '#c8b89a';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(0, 120);
-    ctx.quadraticCurveTo(50, 50, 120, 36);
+    ctx.moveTo(0, 180);
+    ctx.quadraticCurveTo(60, 80, 180, 60);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(0, 150);
-    ctx.quadraticCurveTo(65, 65, 150, 46);
+    ctx.moveTo(0, 230);
+    ctx.quadraticCurveTo(80, 100, 230, 70);
     ctx.stroke();
 
-    // ── TITULO: tamaño adaptable para que no se pase de 3 líneas ──
+    // ── TITULO: tamaño auto para caber en máx 3 líneas, ancho izquierdo ──
     const nombre = (p.name || '').toUpperCase();
-    ctx.textAlign = 'left';
     ctx.fillStyle = '#1a1a14';
+    ctx.textAlign = 'left';
+    const maxTitleW = 480;
 
-    // Ajustar tamaño de fuente automáticamente
-    let fontSize = 64;
-    const maxTitleW = W - 96; // usa todo el ancho disponible
-    const maxLines = 3;
-    const lineHTitle = fontSize * 1.15;
-
-    const calcLines = (size) => {
+    const calcTitleLines = (size) => {
       ctx.font = 'bold ' + size + 'px Georgia, serif';
       const words = nombre.split(' ');
       let lines = [], cur = '';
@@ -1281,79 +1276,84 @@ window.exportImages = async function(format = 'nuevo') {
       return lines;
     };
 
-    // Reducir fuente hasta que quepa en maxLines
-    let titleLines = calcLines(fontSize);
-    while (titleLines.length > maxLines && fontSize > 28) {
+    let fontSize = 88;
+    let titleLines = calcTitleLines(fontSize);
+    while (titleLines.length > 3 && fontSize > 32) {
       fontSize -= 4;
-      titleLines = calcLines(fontSize);
+      titleLines = calcTitleLines(fontSize);
     }
 
     ctx.font = 'bold ' + fontSize + 'px Georgia, serif';
-    const lhT = fontSize * 1.18;
-    let ty = 72;
+    let ty = 100;
     for (const l of titleLines) {
       ctx.fillText(l, 48, ty);
-      ty += lhT;
+      ty += fontSize * 1.1;
     }
 
-    // ── FOTO: protagonista, grande, debajo del título ──
-    const PAD = 30;
-    const imgY = ty + 24;
-    const imgH = H - imgY - 180; // deja espacio abajo para detalles + precio
-    const imgW = W - PAD * 2;
-
+    // ── FOTO (izquierda, cuadrada redondeada) ──
+    const imgX = 30, imgY = ty + 30;
+    const imgSize = 560;
     ctx.save();
     ctx.beginPath();
-    roundRect(ctx, PAD, imgY, imgW, imgH, 28);
+    roundRect(ctx, imgX, imgY, imgSize, imgSize, 24);
     ctx.clip();
     if (imgEl) {
       const iw = imgEl.naturalWidth, ih = imgEl.naturalHeight;
-      const sc = Math.max(imgW / iw, imgH / ih);
+      const sc = Math.max(imgSize / iw, imgSize / ih);
       const dw = iw * sc, dh = ih * sc;
-      ctx.drawImage(imgEl, PAD + (imgW - dw) / 2, imgY + (imgH - dh) / 2, dw, dh);
+      ctx.drawImage(imgEl, imgX + (imgSize - dw) / 2, imgY + (imgSize - dh) / 2, dw, dh);
     } else {
       ctx.fillStyle = '#e0d8cc';
-      ctx.fillRect(PAD, imgY, imgW, imgH);
+      ctx.fillRect(imgX, imgY, imgSize, imgSize);
     }
     ctx.restore();
 
-    // ── ZONA INFERIOR: descripción a la izquierda, precio a la derecha ──
-    const botY = imgY + imgH + 22;
-    const botH = H - botY - 20;
+    // ── LISTA DE DETALLES (derecha, sin líneas separadoras) ──
+    const listX = imgX + imgSize + 40;
+    const listW = W - listX - 30;
+    const listStartY = imgY + 30;
 
-    // Descripción (texto pequeño, sin líneas separadoras)
+    const detalles = [];
+    if (p.description) {
+      const frases = p.description.split(/[.,;]/).map(s => s.trim()).filter(Boolean);
+      detalles.push(...frases);
+    }
+    if (p.mlVal && p.mlUnit !== 'N/A') detalles.push(p.mlVal + ' ' + p.mlUnit);
     const skinArr = Array.isArray(p.skin)
       ? p.skin.filter(s => s !== 'No aplica')
       : (p.skin && p.skin !== 'No aplica' ? [p.skin] : []);
-    const metaParts = [];
-    if (p.description) metaParts.push(p.description);
-    if (skinArr.length) metaParts.push(skinArr.join(', '));
-    if (p.mlVal && p.mlUnit !== 'N/A') metaParts.push(p.mlVal + ' ' + p.mlUnit);
-    const descText = metaParts.join('  ·  ').toUpperCase();
+    if (skinArr.length) detalles.push(skinArr.join(', '));
+    if (p.category) detalles.push(p.category);
+    if (!detalles.length) detalles.push(p.name || '');
 
-    ctx.fillStyle = '#6b6454';
-    ctx.font = '400 22px Arial, sans-serif';
     ctx.textAlign = 'left';
-    const descMaxW = W * 0.62;
-    const descWords = descText.split(' ');
-    let dl = '', dly = botY + 28, dlH = 30;
-    for (const w of descWords) {
-      const test = dl + w + ' ';
-      if (ctx.measureText(test).width > descMaxW && dl) {
-        ctx.fillText(dl.trim(), PAD, dly);
-        dl = w + ' '; dly += dlH;
-        if (dly > H - 20) break;
-      } else dl = test;
-    }
-    ctx.fillText(dl.trim(), PAD, dly);
+    let dy = listStartY + 30;
+    const lineH = 34;
+    const itemGap = 52;
 
-    // ── PRECIO pill inferior derecha ──
+    for (let i = 0; i < Math.min(detalles.length, 6); i++) {
+      ctx.fillStyle = '#2a2820';
+      ctx.font = '500 24px Arial, sans-serif';
+      const words = detalles[i].toUpperCase().split(' ');
+      let line = '', linesWritten = 0;
+      for (const w of words) {
+        const test = line + w + ' ';
+        if (ctx.measureText(test).width > listW && line) {
+          ctx.fillText(line.trim(), listX, dy + linesWritten * lineH);
+          line = w + ' ';
+          linesWritten++;
+        } else line = test;
+      }
+      ctx.fillText(line.trim(), listX, dy + linesWritten * lineH);
+      dy += itemGap + (linesWritten > 0 ? linesWritten * lineH : 0);
+    }
+
+    // ── PRECIO (pill esquina inferior derecha) ──
     const priceText = fmtMoney(p.price);
-    ctx.font = 'bold 52px Georgia, serif';
+    ctx.font = 'bold 56px Georgia, serif';
     const priceW = ctx.measureText(priceText).width;
-    const pillW = priceW + 72, pillH = 82;
-    const pillX = W - pillW - PAD;
-    const pillY = H - pillH - 24;
+    const pillW = priceW + 80, pillH = 90;
+    const pillX = W - pillW - 30, pillY = H - pillH - 30;
 
     ctx.fillStyle = '#f0ece4';
     ctx.strokeStyle = '#2a2820';
@@ -1364,9 +1364,9 @@ window.exportImages = async function(format = 'nuevo') {
     ctx.stroke();
 
     ctx.fillStyle = '#2a2820';
-    ctx.font = 'bold 48px Georgia, serif';
+    ctx.font = 'bold 52px Georgia, serif';
     ctx.textAlign = 'center';
-    ctx.fillText(priceText, pillX + pillW / 2, pillY + 56);
+    ctx.fillText(priceText, pillX + pillW / 2, pillY + 60);
 
     canvas.toBlob(blob => {
       const fname = (p.name || 'producto').replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g, '').trim().replace(/ +/g, '_');
