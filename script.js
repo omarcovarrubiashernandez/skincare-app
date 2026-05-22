@@ -285,15 +285,21 @@ window.setTab = function(i) {
 };
 
 function renderTab() {
-  const c = document.getElementById('mainContent');
-  if(currentTab===0) { if(!document.getElementById('invList')) c.innerHTML=renderInventory(); renderInvList(); }
-  else if(currentTab===1) { if(!document.getElementById('quoteGrid')) c.innerHTML=renderQuote(); renderQuoteGrid(); }
-  else if(currentTab===2) c.innerHTML=renderSales();
-  else if(currentTab===3) c.innerHTML=renderReports();
-  else if(currentTab===4) c.innerHTML=renderFinances();
-  else if(currentTab===5) c.innerHTML=renderCatalog();
-  else if(currentTab===6) c.innerHTML=renderCreditSales();
-  bindEvents();
+  try {
+    const c = document.getElementById('mainContent');
+    if(currentTab===0) { if(!document.getElementById('invList')) c.innerHTML=renderInventory(); renderInvList(); }
+    else if(currentTab===1) { if(!document.getElementById('quoteGrid')) c.innerHTML=renderQuote(); renderQuoteGrid(); }
+    else if(currentTab===2) c.innerHTML=renderSales();
+    else if(currentTab===3) c.innerHTML=renderReports();
+    else if(currentTab===4) c.innerHTML=renderFinances();
+    else if(currentTab===5) c.innerHTML=renderCatalog();
+    else if(currentTab===6) c.innerHTML=renderCreditSales();
+    bindEvents();
+  } catch(err) {
+    const c = document.getElementById('mainContent');
+    if(c) c.innerHTML = '<div style="padding:24px;color:red;font-family:monospace;font-size:13px;word-break:break-all;"><b>Error en tab '+currentTab+':</b><br>' + err.message + '<br><br>' + (err.stack||'') + '</div>';
+    console.error('renderTab error:', err);
+  }
 }
 
 let lowStockThreshold = parseInt(localStorage.getItem('lowStockThreshold')||'5');
