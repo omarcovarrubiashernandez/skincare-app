@@ -1170,8 +1170,7 @@ function renderCatalog() {
   <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:28px;">
     <button class="btn btn-primary btn-full" onclick="exportCatalog(true)" style="padding:14px;font-size:15px;">📦 Exportar solo productos en stock</button>
     <button class="btn btn-outline btn-full" onclick="exportCatalog(false)" style="padding:14px;font-size:15px;">📋 Exportar catálogo completo</button>
-    <button class="btn btn-gold btn-full" onclick="open
-    Modal()" style="padding:14px;font-size:15px;">🖼 Exportar imágenes (.zip)</button>
+    <button class="btn btn-gold btn-full" onclick="openExportImagesModal()" style="padding:14px;font-size:15px;">🖼 Exportar imágenes (.zip)</button>
     <button class="btn btn-outline btn-full" onclick="exportStockExcel()" style="padding:14px;font-size:15px;">📊 Exportar inventario (.csv)</button>
   </div>
   <div style="font-family:'Playfair Display',serif;font-size:18px;margin-bottom:14px;color:var(--text);">Vista previa</div>
@@ -1437,105 +1436,6 @@ window.exportImages = async function(format = 'nuevo') {
   document.body.appendChild(a); a.click();
   setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 1000);
   toast(`ZIP descargado (${count} imágenes)`);
-};
-
-
-  function drawHorizontal(ctx,p,imgEl,W,H){
-    const PAD=48,IMG_SIZE=H-PAD*2;
-    ctx.fillStyle='#f5f0e8';ctx.fillRect(0,0,W,H);
-    ctx.fillStyle='#4a5240';ctx.fillRect(0,0,W,8);
-    ctx.save();ctx.beginPath();ctx.roundRect(PAD,PAD,IMG_SIZE,IMG_SIZE,20);ctx.clip();
-    ctx.fillStyle='#ede5d4';ctx.fillRect(PAD,PAD,IMG_SIZE,IMG_SIZE);
-    const iw=imgEl.naturalWidth,ih=imgEl.naturalHeight;
-    const sc=Math.min(IMG_SIZE/iw,IMG_SIZE/ih);
-    const dw=iw*sc,dh=ih*sc;
-    ctx.drawImage(imgEl,PAD+(IMG_SIZE-dw)/2,PAD+(IMG_SIZE-dh)/2,dw,dh);
-    ctx.restore();
-    ctx.strokeStyle='#d4b07a';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(IMG_SIZE+PAD*2,PAD*2);ctx.lineTo(IMG_SIZE+PAD*2,H-PAD*2);ctx.stroke();
-    const TX=IMG_SIZE+PAD*3,TW=W-TX-PAD;
-    let ty=PAD+60;
-    ctx.fillStyle='#4a5240';ctx.font='700 22px Arial, sans-serif';ctx.letterSpacing='4px';
-    ctx.fillText('APLO BLOSSOM',TX,ty);ctx.letterSpacing='0px';ty+=50;
-    ctx.fillStyle='#1a1a14';ctx.font='700 44px Georgia, serif';
-    const words=(p.name||'').split(' ');let line='';
-    for(const w of words){const t=line+w+' ';if(ctx.measureText(t).width>TW&&line){ctx.fillText(line.trim(),TX,ty);line=w+' ';ty+=52;}else line=t;}
-    ctx.fillText(line.trim(),TX,ty);ty+=62;
-    if(p.mlVal&&p.mlUnit!=='N/A'){ctx.fillStyle='#6b7560';ctx.font='500 26px Arial, sans-serif';ctx.fillText(p.mlVal+p.mlUnit,TX,ty);ty+=44;}
-    const skinArr=Array.isArray(p.skin)?p.skin.filter(s=>s!=='No aplica'):(p.skin&&p.skin!=='No aplica'?[p.skin]:[]);
-    if(skinArr.length){ctx.fillStyle='#8a9480';ctx.font='400 22px Arial, sans-serif';ctx.fillText(skinArr.join(', '),TX,ty);ty+=40;}
-    if(p.description){
-      ctx.fillStyle='#5a5848';ctx.font='400 22px Arial, sans-serif';
-      const priceY=H-PAD-40,maxDescY=priceY-60,lineH=32;
-      const dwords=p.description.split(' ');let dl='';
-      for(const w of dwords){const t=dl+w+' ';if(ctx.measureText(t).width>TW&&dl){if(ty+lineH>maxDescY)break;ctx.fillText(dl.trim(),TX,ty);dl=w+' ';ty+=lineH;}else dl=t;}
-      if(ty<=maxDescY)ctx.fillText(dl.trim(),TX,ty);
-    }
-    ctx.fillStyle='#4a5240';ctx.font='700 58px Georgia, serif';
-    ctx.fillText(fmtMoney(p.price),TX,H-PAD-20);
-  }
-
-  function drawVertical(ctx,p,imgEl,W,H,isFacebook){
-    const PAD=52;
-    ctx.fillStyle='#f5f0e8';ctx.fillRect(0,0,W,H);
-    ctx.fillStyle='#4a5240';ctx.fillRect(0,0,W,90);
-    ctx.fillStyle='#f5f0e8';ctx.font='700 32px Georgia, serif';ctx.textAlign='center';
-    ctx.fillText('Aplo Blossom',W/2,58);
-    ctx.font='500 18px Arial, sans-serif';ctx.fillStyle='#8a9480';ctx.fillText('skincare & wellness',W/2,80);
-    ctx.textAlign='left';
-    const imgH=Math.round(H*0.54);
-    ctx.save();ctx.beginPath();ctx.roundRect(PAD,110,W-PAD*2,imgH-110,24);ctx.clip();
-    ctx.fillStyle='#ede5d4';ctx.fillRect(PAD,110,W-PAD*2,imgH-110);
-    const aW=W-PAD*2,aH=imgH-110;
-    const iw=imgEl.naturalWidth,ih=imgEl.naturalHeight;
-    const sc=Math.min(aW/iw,aH/ih);
-    const dw=iw*sc,dh=ih*sc;
-    ctx.drawImage(imgEl,PAD+(aW-dw)/2,110+(aH-dh)/2,dw,dh);
-    ctx.restore();
-    ctx.strokeStyle='#b8955a';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(PAD,imgH+16);ctx.lineTo(W-PAD,imgH+16);ctx.stroke();
-    let ty=imgH+72;
-    ctx.textAlign='center';
-    ctx.fillStyle='#1a1a14';ctx.font='700 52px Georgia, serif';
-    const TW=W-PAD*2;const words=(p.name||'').split(' ');let line='';
-    for(const w of words){const t=line+w+' ';if(ctx.measureText(t).width>TW&&line){ctx.fillText(line.trim(),W/2,ty);line=w+' ';ty+=60;}else line=t;}
-    ctx.fillText(line.trim(),W/2,ty);ty+=70;
-    const meta=[];
-    if(p.mlVal&&p.mlUnit!=='N/A')meta.push(p.mlVal+p.mlUnit);
-    const skinArr=Array.isArray(p.skin)?p.skin.filter(s=>s!=='No aplica'):(p.skin&&p.skin!=='No aplica'?[p.skin]:[]);
-    if(skinArr.length)meta.push(skinArr.join(', '));
-    if(meta.length){ctx.fillStyle='#6b7560';ctx.font='500 28px Arial, sans-serif';ctx.fillText(meta.join(' · '),W/2,ty);ty+=48;}
-    if(p.description){
-      ctx.fillStyle='#5a5848';ctx.font='400 26px Arial, sans-serif';
-      const priceY=H-80,maxDescY=priceY-90,lineH=38;
-      const dwords=p.description.split(' ');let dl='';
-      for(const w of dwords){const t=dl+w+' ';if(ctx.measureText(t).width>TW*0.9&&dl){if(ty+lineH>maxDescY)break;ctx.fillText(dl.trim(),W/2,ty);dl=w+' ';ty+=lineH;}else dl=t;}
-      if(ty<=maxDescY)ctx.fillText(dl.trim(),W/2,ty);
-    }
-    const priceBoxH=80,priceBoxY=H-priceBoxH-20;
-    ctx.fillStyle='#4a5240';ctx.roundRect(PAD,priceBoxY,W-PAD*2,priceBoxH,16);ctx.fill();
-    ctx.fillStyle='#f5f0e8';ctx.font='700 50px Georgia, serif';ctx.textAlign='center';
-    ctx.fillText(fmtMoney(p.price),W/2,priceBoxY+56);
-    ctx.textAlign='left';
-  }
-
-  const zip=new JSZip();
-  let count=0;
-  for(const p of prods){
-    try{
-      let blob;
-      if(p.image.startsWith('data:')){blob=dataURLtoBlob(p.image);}
-      else { const r = await fetch(p.image, { mode: 'cors' }); if (!r.ok) throw new Error(`HTTP ${r.status}`); blob = await r.blob(); }      if(!blob)continue;
-      const result=await makeCard(p,blob,format);
-      if(result){zip.file(result.fname,result.blob);count++;}
-      toast(`Procesando... ${count}/${prods.length}`);
-    }catch(e){console.error(e);}
-  }
-  const zipBlob=await zip.generateAsync({type:'blob'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(zipBlob);
-  const formatLabel=format==='horizontal'?'horizontal':format==='vertical'?'vertical':'facebook';
-  a.download=`catalogo-aploblossom-${formatLabel}.zip`;
-  document.body.appendChild(a);a.click();
-  setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(a.href);},1000);
-  toast(`ZIP descargado (${count} imágenes en formato ${formatLabel})`);
 };
 
 window.exportStockExcel=function(){
