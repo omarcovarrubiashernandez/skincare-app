@@ -1326,8 +1326,13 @@ window.exportImages = async function(format = 'nuevo') {
     if (skinArr.length) extraItems.push(skinArr.join(', '));
     if (p.mlVal && p.mlUnit !== 'N/A') extraItems.push(p.mlVal + ' ' + p.mlUnit);
 
-    // Función: dibujar texto con wrap y devolver Y final
-    const drawWrapped = (text, x, startY, maxW, font, color, lineH) => {
+    // Límite máximo de Y para el texto (deja espacio para el precio + margen)
+    const pillH = 90;
+    const maxTextY = H - pillH - 28 - 20; // 20px de margen sobre el precio
+
+    // Función: dibujar texto con wrap, respetando límite de Y
+    // Devuelve { y: Y final, clipped: true si se cortó }
+    const drawWrapped = (text, x, startY, maxW, font, color, lineH, yLimit) => {
       ctx.font = font;
       ctx.fillStyle = color;
       const words = text.toUpperCase().split(' ');
@@ -1335,40 +1340,87 @@ window.exportImages = async function(format = 'nuevo') {
       for (const w of words) {
         const test = line + w + ' ';
         if (ctx.measureText(test).width > maxW && line) {
+          if (curY > yLimit) return { y: curY, clipped: true };
           ctx.fillText(line.trim(), x, curY);
           line = w + ' '; curY += lineH;
         } else line = test;
       }
+      // Última línea: verificar si cabe
+      if (curY > yLimit) return { y: curY, clipped: true };
+      // Si es la última línea y la siguiente Y ya rebasaría, agregar …
+      const lastLine = line.trim();
+      ctx.fillText(lastLine, x, curY);
+      return { y: curY + lineH, clipped: false };
+    };
+
+    // Función: dibujar con elipsis al final si se corta
+    const drawWrappedSafe = (text, x, startY, maxW, font, color, lineH) => {
+      ctx.font = font;
+      ctx.fillStyle = color;
+      const words = text.toUpperCase().split(' ');
+      let line = '', curY = startY;
+
+      for (let i = 0; i < words.length; i++) {
+        const w = words[i];
+        const test = line + w + ' ';
+        const isLast = i === words.length - 1;
+
+        if (ctx.measureText(test).width > maxW && line) {
+          // ¿Cabe otra línea?
+          const nextY = curY + lineH;
+          if (nextY + lineH > maxTextY) {
+            // No cabe más: agregar … al final de esta línea
+            let truncLine = line.trim();
+            while (ctx.measureText(truncLine + '…').width > maxW && truncLine.length > 1)
+              truncLine = truncLine.slice(0, -1);
+            ctx.fillText(truncLine + '…', x, curY);
+            return { y: curY + lineH, clipped: true };
+          }
+          ctx.fillText(line.trim(), x, curY);
+          line = w + ' '; curY += lineH;
+        } else {
+          line = test;
+        }
+      }
+      // Última línea pendiente
+      if (curY > maxTextY) return { y: curY, clipped: true };
       ctx.fillText(line.trim(), x, curY);
-      return curY + lineH;
+      return { y: curY + lineH, clipped: false };
     };
 
     let dy = imgY + 36;
     const descFont = '500 24px Arial, sans-serif';
     const descLineH = 32;
-    const descGap = 20; // espacio entre frases
+    const descGap = 20;
 
+    let descClipped = false;
     for (const frase of descFrases) {
-      dy = drawWrapped(frase, colX, dy, colW, descFont, '#2a2820', descLineH);
-      dy += descGap;
+      if (descClipped) break;
+      // Verificar si hay espacio para al menos 1 línea más
+      if (dy + descLineH > maxTextY) break;
+      const result = drawWrappedSafe(frase, colX, dy, colW, descFont, '#2a2820', descLineH);
+      dy = result.y + descGap;
+      if (result.clipped) { descClipped = true; }
     }
 
-    // Espacio antes de los datos extra
-    dy += 10;
-
-    // Datos extra en color más tenue
-    const extraFont = '500 22px Arial, sans-serif';
-    const extraLineH = 30;
-    for (const extra of extraItems) {
-      dy = drawWrapped(extra, colX, dy, colW, extraFont, '#7a7060', extraLineH);
-      dy += 14;
+    // Datos extra en color más tenue (solo si no se cortó antes y hay espacio)
+    if (!descClipped) {
+      dy += 10;
+      const extraFont = '500 22px Arial, sans-serif';
+      const extraLineH = 30;
+      for (const extra of extraItems) {
+        if (dy + extraLineH > maxTextY) break;
+        const result = drawWrappedSafe(extra, colX, dy, colW, extraFont, '#7a7060', extraLineH);
+        dy = result.y + 14;
+        if (result.clipped) break;
+      }
     }
 
     // ── PRECIO: pill esquina inferior derecha ──
     const priceText = fmtMoney(p.price);
     ctx.font = 'bold 54px Georgia, serif';
     const priceW = ctx.measureText(priceText).width;
-    const pillW = priceW + 80, pillH = 90;
+    const pillW = priceW + 80;
     const pillX = W - pillW - 28, pillY = H - pillH - 28;
 
     ctx.fillStyle = '#f0ece4';
