@@ -1233,190 +1233,161 @@ window.exportImages = async function(format = 'nuevo') {
     };
   });
 
-  // ── DISEÑO ACTUALIZADO: imagen destaca a la izquierda, detalles a la derecha ──
+  // ── DISEÑO: imagen grande izquierda, título arriba, detalles derecha ──
   const makeCard = (p, imgEl) => new Promise(res => {
-    const W = 970, H = 1100;
+    const W = 970, H = 1220;
     const canvas = document.createElement('canvas');
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext('2d');
 
-    // ── Fondo degradado suave crema-blanco ──
-    const grad = ctx.createLinearGradient(0, 0, W, H);
-    grad.addColorStop(0, '#fdfbf8');
-    grad.addColorStop(1, '#f5f0ea');
-    ctx.fillStyle = grad;
+    // ── Fondo gris beige suave (como la referencia) ──
+    ctx.fillStyle = '#e8e4de';
     ctx.fillRect(0, 0, W, H);
 
     // ── Decoración: curvas finas esquina superior izquierda ──
-    ctx.strokeStyle = '#d4c4b0';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#c0b09a';
+    ctx.lineWidth = 1.8;
     ctx.beginPath();
-    ctx.moveTo(0, 160); ctx.quadraticCurveTo(55, 70, 170, 50); ctx.stroke();
+    ctx.moveTo(0, 190); ctx.quadraticCurveTo(60, 80, 190, 55); ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(0, 210); ctx.quadraticCurveTo(75, 95, 215, 65); ctx.stroke();
+    ctx.moveTo(0, 245); ctx.quadraticCurveTo(80, 105, 240, 70); ctx.stroke();
 
-    // ── TÍTULO: arriba a la izquierda, máx 1 línea con elipsis, tamaño moderado ──
+    // ── TÍTULO: grande, arriba a la izquierda, máx 2 líneas con elipsis ──
     const nombre = (p.name || '').toUpperCase();
     ctx.fillStyle = '#1a1814';
     ctx.textAlign = 'left';
-    const TITLE_X = 48, TITLE_Y = 78;
-    const maxTitleW = W - TITLE_X - 30;
+    const TITLE_X = 48;
+    const maxTitleW = 520;
 
-    // Calcular tamaño de fuente que quepa en 1 línea (con elipsis si no cabe en mínimo)
-    let tFontSize = 62;
-    ctx.font = 'bold ' + tFontSize + 'px Georgia, serif';
-    while (ctx.measureText(nombre).width > maxTitleW && tFontSize > 32) {
-      tFontSize -= 3;
-      ctx.font = 'bold ' + tFontSize + 'px Georgia, serif';
-    }
-    // Si aún no cabe, truncar con elipsis
-    let titleText = nombre;
-    if (ctx.measureText(titleText).width > maxTitleW) {
-      while (ctx.measureText(titleText + '…').width > maxTitleW && titleText.length > 1) {
-        titleText = titleText.slice(0, -1);
+    const calcLines = (size) => {
+      ctx.font = 'bold ' + size + 'px Georgia, serif';
+      const words = nombre.split(' ');
+      let lines = [], cur = '';
+      for (const w of words) {
+        const test = cur + w + ' ';
+        if (ctx.measureText(test).width > maxTitleW && cur) {
+          lines.push(cur.trim()); cur = w + ' ';
+        } else cur = test;
       }
-      titleText += '…';
+      lines.push(cur.trim());
+      return lines;
+    };
+
+    let tSize = 90;
+    let titleLines = calcLines(tSize);
+    while (titleLines.length > 2 && tSize > 36) { tSize -= 4; titleLines = calcLines(tSize); }
+    // Si con tamaño mínimo sigue siendo >2 líneas, truncar la 2da con elipsis
+    if (titleLines.length > 2) {
+      titleLines = titleLines.slice(0, 2);
+      ctx.font = 'bold ' + tSize + 'px Georgia, serif';
+      let l2 = titleLines[1];
+      while (ctx.measureText(l2 + '…').width > maxTitleW && l2.length > 1) l2 = l2.slice(0, -1);
+      titleLines[1] = l2 + '…';
     }
-    ctx.fillText(titleText, TITLE_X, TITLE_Y);
 
-    // ── Línea separadora fina debajo del título ──
-    const sepY = TITLE_Y + 18;
-    ctx.strokeStyle = '#d4c4b0';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(TITLE_X, sepY); ctx.lineTo(W - 48, sepY); ctx.stroke();
+    ctx.font = 'bold ' + tSize + 'px Georgia, serif';
+    let ty = 108;
+    for (const l of titleLines) { ctx.fillText(l, TITLE_X, ty); ty += tSize * 1.12; }
 
-    // ── FOTO: izquierda, grande, con sombra y bordes redondeados ──
-    const imgX = 30, imgY = sepY + 28;
-    const imgSize = 590;
+    // ── Subtítulo "DETALLES" debajo del título ──
+    ctx.font = 'bold 28px Arial, sans-serif';
+    ctx.fillStyle = '#1a1814';
+    ctx.fillText('DETALLES', TITLE_X, ty + 10);
 
-    // Sombra de la imagen
-    ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.18)';
-    ctx.shadowBlur = 28;
-    ctx.shadowOffsetX = 6;
-    ctx.shadowOffsetY = 8;
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    roundRect(ctx, imgX, imgY, imgSize, imgSize, 22);
-    ctx.fill();
-    ctx.restore();
+    // ── FOTO: izquierda, grande, ocupa la mayor parte del alto ──
+    const imgX = 30, imgY = ty + 48;
+    const imgW = 610, imgH = H - imgY - 30;
 
-    // Clip y dibujar imagen
     ctx.save();
     ctx.beginPath();
-    roundRect(ctx, imgX, imgY, imgSize, imgSize, 22);
+    roundRect(ctx, imgX, imgY, imgW, imgH, 18);
     ctx.clip();
     if (imgEl) {
       const iw = imgEl.naturalWidth, ih = imgEl.naturalHeight;
-      const sc = Math.max(imgSize / iw, imgSize / ih);
+      const sc = Math.max(imgW / iw, imgH / ih);
       const dw = iw * sc, dh = ih * sc;
-      ctx.drawImage(imgEl, imgX + (imgSize - dw) / 2, imgY + (imgSize - dh) / 2, dw, dh);
+      ctx.drawImage(imgEl, imgX + (imgW - dw) / 2, imgY + (imgH - dh) / 2, dw, dh);
     } else {
-      ctx.fillStyle = '#e8e0d4';
-      ctx.fillRect(imgX, imgY, imgSize, imgSize);
+      ctx.fillStyle = '#d8d0c4';
+      ctx.fillRect(imgX, imgY, imgW, imgH);
     }
     ctx.restore();
 
-    // ── DETALLES (columna derecha) ──
-    const colRX = imgX + imgSize + 38;
-    const colRW = W - colRX - 32;
+    // ── DETALLES: columna derecha ──
+    const colX = imgX + imgW + 36;
+    const colW = W - colX - 28;
+    ctx.textAlign = 'left';
 
-    // Helper: texto truncado con elipsis en 1 línea
-    const truncate1Line = (text, maxW, font) => {
-      ctx.font = font;
-      if (ctx.measureText(text).width <= maxW) return text;
-      let t = text;
-      while (ctx.measureText(t + '…').width > maxW && t.length > 1) t = t.slice(0, -1);
-      return t + '…';
-    };
+    // Frases de descripción (texto completo, sin truncar, wrap natural)
+    const descFrases = p.description
+      ? p.description.split(/[.,;]/).map(s => s.trim()).filter(Boolean)
+      : [p.name || ''];
 
-    // Construir lista de detalles
-    const detalles = [];
-    if (p.description) {
-      const frases = p.description.split(/[.,;]/).map(s => s.trim()).filter(Boolean);
-      detalles.push(...frases);
-    }
-    if (p.mlVal && p.mlUnit !== 'N/A') detalles.push(p.mlVal + ' ' + p.mlUnit);
+    // Datos extra: ml y tipo de piel (color diferente)
+    const extraItems = [];
     const skinArr = Array.isArray(p.skin)
       ? p.skin.filter(s => s !== 'No aplica')
       : (p.skin && p.skin !== 'No aplica' ? [p.skin] : []);
-    if (skinArr.length) detalles.push(skinArr.join(', '));
-    if (p.category) detalles.push(p.category);
-    if (!detalles.length) detalles.push(p.name || '');
+    if (skinArr.length) extraItems.push(skinArr.join(', '));
+    if (p.mlVal && p.mlUnit !== 'N/A') extraItems.push(p.mlVal + ' ' + p.mlUnit);
 
-    ctx.textAlign = 'left';
-    const detFont = '500 22px Arial, sans-serif';
-    const lineH = 28;
-    const itemGap = 46;
-    let dy = imgY + 40;
-
-    const maxItems = 6;
-    for (let i = 0; i < Math.min(detalles.length, maxItems); i++) {
-      // Punto decorativo
-      ctx.fillStyle = '#b8a898';
-      ctx.beginPath();
-      ctx.arc(colRX - 14, dy - 8, 4, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Texto truncado a 2 líneas máximo
-      ctx.fillStyle = '#2a2820';
-      ctx.font = detFont;
-      const texto = detalles[i].toUpperCase();
-      const words = texto.split(' ');
-      let line1 = '', line2 = '', overflowLine = false;
+    // Función: dibujar texto con wrap y devolver Y final
+    const drawWrapped = (text, x, startY, maxW, font, color, lineH) => {
+      ctx.font = font;
+      ctx.fillStyle = color;
+      const words = text.toUpperCase().split(' ');
+      let line = '', curY = startY;
       for (const w of words) {
-        const test = line1 + w + ' ';
-        if (ctx.measureText(test).width > colRW && line1) {
-          overflowLine = true;
-          line2 = w + ' ';
-          // Seguir llenando línea 2
-          const remainingWords = words.slice(words.indexOf(w) + 1);
-          for (const rw of remainingWords) {
-            const test2 = line2 + rw + ' ';
-            if (ctx.measureText(test2).width > colRW && line2) {
-              // Truncar línea 2 con elipsis
-              line2 = truncate1Line(line2.trim(), colRW, detFont) ;
-              break;
-            } else line2 = test2;
-          }
-          break;
-        } else line1 = test;
+        const test = line + w + ' ';
+        if (ctx.measureText(test).width > maxW && line) {
+          ctx.fillText(line.trim(), x, curY);
+          line = w + ' '; curY += lineH;
+        } else line = test;
       }
-      ctx.fillText(line1.trim(), colRX, dy);
-      if (overflowLine) {
-        ctx.fillText(line2.trim(), colRX, dy + lineH);
-        dy += itemGap + lineH;
-      } else {
-        dy += itemGap;
-      }
+      ctx.fillText(line.trim(), x, curY);
+      return curY + lineH;
+    };
+
+    let dy = imgY + 36;
+    const descFont = '500 24px Arial, sans-serif';
+    const descLineH = 32;
+    const descGap = 20; // espacio entre frases
+
+    for (const frase of descFrases) {
+      dy = drawWrapped(frase, colX, dy, colW, descFont, '#2a2820', descLineH);
+      dy += descGap;
     }
 
-    // ── PRECIO: pill abajo a la derecha, tamaño moderado ──
-    const priceText = fmtMoney(p.price);
-    ctx.font = 'bold 44px Georgia, serif';
-    const priceW = ctx.measureText(priceText).width;
-    const pillW = priceW + 64, pillH = 72;
-    const pillX = W - pillW - 32, pillY = H - pillH - 32;
+    // Espacio antes de los datos extra
+    dy += 10;
 
-    // Sombra del pill
-    ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.12)';
-    ctx.shadowBlur = 14;
-    ctx.shadowOffsetY = 4;
-    ctx.fillStyle = '#fff8f2';
+    // Datos extra en color más tenue
+    const extraFont = '500 22px Arial, sans-serif';
+    const extraLineH = 30;
+    for (const extra of extraItems) {
+      dy = drawWrapped(extra, colX, dy, colW, extraFont, '#7a7060', extraLineH);
+      dy += 14;
+    }
+
+    // ── PRECIO: pill esquina inferior derecha ──
+    const priceText = fmtMoney(p.price);
+    ctx.font = 'bold 54px Georgia, serif';
+    const priceW = ctx.measureText(priceText).width;
+    const pillW = priceW + 80, pillH = 90;
+    const pillX = W - pillW - 28, pillY = H - pillH - 28;
+
+    ctx.fillStyle = '#f0ece4';
     ctx.strokeStyle = '#2a2820';
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = 3;
     ctx.beginPath();
     roundRect(ctx, pillX, pillY, pillW, pillH, pillH / 2);
     ctx.fill();
     ctx.stroke();
-    ctx.restore();
 
     ctx.fillStyle = '#2a2820';
-    ctx.font = 'bold 42px Georgia, serif';
+    ctx.font = 'bold 52px Georgia, serif';
     ctx.textAlign = 'center';
-    ctx.fillText(priceText, pillX + pillW / 2, pillY + 48);
+    ctx.fillText(priceText, pillX + pillW / 2, pillY + 62);
 
     canvas.toBlob(blob => {
       const fname = (p.name || 'producto').replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g, '').trim().replace(/ +/g, '_');
