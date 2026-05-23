@@ -1321,10 +1321,12 @@ window.exportImages = async function(format = 'nuevo') {
     // Datos extra: ml y tipo de piel (color diferente)
     const extraItems = [];
     const skinArr = Array.isArray(p.skin)
-      ? p.skin.filter(s => s !== 'No aplica')
+      ? p.skin.filter(s => s && s !== 'No aplica')
       : (p.skin && p.skin !== 'No aplica' ? [p.skin] : []);
     if (skinArr.length) extraItems.push(skinArr.join(', '));
-    if (p.mlVal && p.mlUnit !== 'N/A') extraItems.push(p.mlVal + ' ' + p.mlUnit);
+    const mlVal = String(p.mlVal || '').trim();
+    const mlUnit = String(p.mlUnit || '').trim();
+    if (mlVal && mlVal !== '0' && mlUnit && mlUnit !== 'N/A') extraItems.push(mlVal + ' ' + mlUnit);
 
     // Límite máximo de Y para el texto (deja espacio para el precio + margen)
     const pillH = 90;
