@@ -1404,16 +1404,19 @@ window.exportImages = async function(format = 'nuevo') {
     }
 
     // Datos extra en color más tenue (solo si no se cortó antes y hay espacio)
+    let extrasShownAbove = false;
     if (!descClipped) {
       dy += 10;
       const extraFont = '500 22px Arial, sans-serif';
       const extraLineH = 30;
+      let allFit = true;
       for (const extra of extraItems) {
-        if (dy + extraLineH > maxTextY) break;
+        if (dy + extraLineH > maxTextY) { allFit = false; break; }
         const result = drawWrappedSafe(extra, colX, dy, colW, extraFont, '#7a7060', extraLineH);
         dy = result.y + 14;
-        if (result.clipped) break;
+        if (result.clipped) { allFit = false; break; }
       }
+      extrasShownAbove = allFit;
     }
 
     // ── PRECIO: pill esquina inferior derecha ──
@@ -1435,6 +1438,32 @@ window.exportImages = async function(format = 'nuevo') {
     ctx.font = 'bold 52px Georgia, serif';
     ctx.textAlign = 'center';
     ctx.fillText(priceText, pillX + pillW / 2, pillY + 62);
+
+    // Si los extras no se mostraron arriba, ponerlos a la izquierda del precio
+    if (!extrasShownAbove && extraItems.length) {
+      const extraText = extraItems.join('  ·  ').toUpperCase();
+      ctx.font = '500 20px Arial, sans-serif';
+      ctx.fillStyle = '#7a7060';
+      ctx.textAlign = 'right';
+      const maxExtraW = pillX - colX - 16;
+      // Wrap en máx 2 líneas
+      const eWords = extraText.split(' ');
+      let eLine = '', eLines = [];
+      for (const w of eWords) {
+        const test = eLine + w + ' ';
+        if (ctx.measureText(test).width > maxExtraW && eLine) {
+          eLines.push(eLine.trim()); eLine = w + ' ';
+        } else eLine = test;
+      }
+      eLines.push(eLine.trim());
+      eLines = eLines.slice(0, 2);
+      const eLineH = 26;
+      const eTotalH = eLines.length * eLineH;
+      const eStartY = pillY + (pillH - eTotalH) / 2 + eLineH - 4;
+      for (let i = 0; i < eLines.length; i++) {
+        ctx.fillText(eLines[i], pillX - 16, eStartY + i * eLineH);
+      }
+    }
 
     canvas.toBlob(blob => {
       const fname = (p.name || 'producto').replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g, '').trim().replace(/ +/g, '_');
