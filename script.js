@@ -1257,7 +1257,7 @@ window.exportImages = async function(format = 'nuevo') {
     ctx.fillStyle = '#1a1814';
     ctx.textAlign = 'left';
     const TITLE_X = 48;
-    const maxTitleW = 520;
+    const maxTitleW = W - TITLE_X - 48; // usa todo el ancho del canvas
 
     const calcLines = (size) => {
       ctx.font = 'bold ' + size + 'px Georgia, serif';
@@ -1297,14 +1297,14 @@ window.exportImages = async function(format = 'nuevo') {
     ctx.beginPath();
     roundRect(ctx, imgX, imgY, imgW, imgH, 18);
     ctx.clip();
+    // Fondo del recuadro (para cuando la imagen no llena todo)
+    ctx.fillStyle = '#e8e4de';
+    ctx.fillRect(imgX, imgY, imgW, imgH);
     if (imgEl) {
       const iw = imgEl.naturalWidth, ih = imgEl.naturalHeight;
-      const sc = Math.max(imgW / iw, imgH / ih);
+      const sc = Math.min(imgW / iw, imgH / ih);
       const dw = iw * sc, dh = ih * sc;
       ctx.drawImage(imgEl, imgX + (imgW - dw) / 2, imgY + (imgH - dh) / 2, dw, dh);
-    } else {
-      ctx.fillStyle = '#d8d0c4';
-      ctx.fillRect(imgX, imgY, imgW, imgH);
     }
     ctx.restore();
 
