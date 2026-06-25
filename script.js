@@ -25,7 +25,6 @@ const R2_CONFIG = {
   publicUrl:   'https://pub-3d7d2139a4334439ae85eb5b2674f06d.r2.dev'
 };
 
-// ── Comprimir imagen antes de subir ──────
 async function compressImage(file, maxPx = 1080, quality = 0.90) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -49,32 +48,23 @@ async function compressImage(file, maxPx = 1080, quality = 0.90) {
   });
 }
 
-// ── Firma HMAC-SHA256 para AWS Signature V4 ──
 async function hmacSha256(key, data) {
-  const k = typeof key === 'string'
-    ? new TextEncoder().encode(key)
-    : key;
-  const cryptoKey = await crypto.subtle.importKey('raw', k,
-    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  return crypto.subtle.sign('HMAC', cryptoKey,
-    new TextEncoder().encode(data));
+  const k = typeof key === 'string' ? new TextEncoder().encode(key) : key;
+  const cryptoKey = await crypto.subtle.importKey('raw', k, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(data));
 }
 
 async function sha256Hex(data) {
-  const buf = data instanceof ArrayBuffer ? data
-    : (data instanceof Blob ? await data.arrayBuffer()
-      : new TextEncoder().encode(data));
+  const buf = data instanceof ArrayBuffer ? data : (data instanceof Blob ? await data.arrayBuffer() : new TextEncoder().encode(data));
   const hash = await crypto.subtle.digest('SHA-256', buf);
   return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
 
-// ── Subir a Cloudflare R2 (AWS S3-compatible, Signature V4) ──
 async function uploadToR2(file) {
   const compressed = await compressImage(file);
   const ext = 'jpg';
   const key = `products/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-  const region = 'auto';
-  const service = 's3';
+  const region = 'auto', service = 's3';
   const endpoint = `https://${R2_CONFIG.accountId}.r2.cloudflarestorage.com`;
   const host = `${R2_CONFIG.accountId}.r2.cloudflarestorage.com`;
   const now = new Date();
@@ -82,51 +72,24 @@ async function uploadToR2(file) {
   const dateStamp = amzDate.slice(0,8);
   const payloadHash = await sha256Hex(compressed);
   const contentType = 'image/jpeg';
-  const canonicalHeaders =
-    `content-type:${contentType}\n` +
-    `host:${host}\n` +
-    `x-amz-content-sha256:${payloadHash}\n` +
-    `x-amz-date:${amzDate}\n`;
+  const canonicalHeaders = `content-type:${contentType}\nhost:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`;
   const signedHeaders = 'content-type;host;x-amz-content-sha256;x-amz-date';
-  const canonicalRequest = [
-    'PUT',
-    '/' + R2_CONFIG.bucket + '/' + key,
-    '',
-    canonicalHeaders,
-    signedHeaders,
-    payloadHash
-  ].join('\n');
+  const canonicalRequest = ['PUT', '/' + R2_CONFIG.bucket + '/' + key, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
   const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
-  const stringToSign = [
-    'AWS4-HMAC-SHA256',
-    amzDate,
-    credentialScope,
-    await sha256Hex(canonicalRequest)
-  ].join('\n');
-  const kDate    = await hmacSha256('AWS4' + R2_CONFIG.secretKey, dateStamp);
-  const kRegion  = await hmacSha256(kDate, region);
+  const stringToSign = ['AWS4-HMAC-SHA256', amzDate, credentialScope, await sha256Hex(canonicalRequest)].join('\n');
+  const kDate = await hmacSha256('AWS4' + R2_CONFIG.secretKey, dateStamp);
+  const kRegion = await hmacSha256(kDate, region);
   const kService = await hmacSha256(kRegion, service);
   const kSigning = await hmacSha256(kService, 'aws4_request');
   const sigBytes = await hmacSha256(kSigning, stringToSign);
-  const signature = Array.from(new Uint8Array(sigBytes))
-    .map(b => b.toString(16).padStart(2,'0')).join('');
-  const authorization =
-    `AWS4-HMAC-SHA256 Credential=${R2_CONFIG.accessKeyId}/${credentialScope},` +
-    `SignedHeaders=${signedHeaders},Signature=${signature}`;
+  const signature = Array.from(new Uint8Array(sigBytes)).map(b => b.toString(16).padStart(2,'0')).join('');
+  const authorization = `AWS4-HMAC-SHA256 Credential=${R2_CONFIG.accessKeyId}/${credentialScope},SignedHeaders=${signedHeaders},Signature=${signature}`;
   const res = await fetch(`${endpoint}/${R2_CONFIG.bucket}/${key}`, {
     method: 'PUT',
-    headers: {
-      'Content-Type': contentType,
-      'x-amz-date': amzDate,
-      'x-amz-content-sha256': payloadHash,
-      'Authorization': authorization
-    },
+    headers: { 'Content-Type': contentType, 'x-amz-date': amzDate, 'x-amz-content-sha256': payloadHash, 'Authorization': authorization },
     body: compressed
   });
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`R2 upload failed ${res.status}: ${txt}`);
-  }
+  if (!res.ok) { const txt = await res.text(); throw new Error(`R2 upload failed ${res.status}: ${txt}`); }
   return `${R2_CONFIG.publicUrl}/${key}`;
 }
 
@@ -171,9 +134,7 @@ function updateSaldoDisplay() {
   const totalGastos = state.expenses.reduce((s,e)=>s+(e.amount||0),0);
   const totalDepositos = state.deposits.reduce((s,d)=>s+(d.amount||0),0);
   const totalPagosLibres = state.pagosLibres.reduce((s,p)=>s+(p.amount||0),0);
-  const totalAbonosParciales = state.creditSales
-    .filter(c => c.status !== 'pagado')
-    .reduce((s,c) => s + (c.pagado||0), 0);
+  const totalAbonosParciales = state.creditSales.filter(c => c.status !== 'pagado').reduce((s,c) => s + (c.pagado||0), 0);
   const saldo = state.saldoBase + totalVentas + totalDepositos + totalPagosLibres + totalAbonosParciales - totalGastos;
   document.querySelectorAll('#headerSaldo').forEach(el=>el.textContent=fmtMoney(saldo));
 }
@@ -227,7 +188,6 @@ window.openSaldoModal = function() {
     </div>
     <div class="divider"></div>
     <div style="font-weight:600;font-size:13px;margin-bottom:10px;color:var(--text);">Agregar depósito propio</div>
-    <div style="font-size:12px;color:var(--text-light);margin-bottom:12px;line-height:1.5;">💡 Úsalo para registrar dinero que metes tú (de tus papás, ahorros, etc.) sin que cuente como venta ni ganancia del negocio.</div>
     <div class="two-col">
       <div class="field"><label>Monto $</label><input id="depositAmount" type="number" placeholder="0"></div>
       <div class="field"><label>Concepto</label><input id="depositConcept" placeholder="Ej: Inversión personal"></div>
@@ -363,6 +323,7 @@ const EXPENSE_CATS=['Insumos','Compra de productos','Envíos','Publicidad','Empa
 // INVENTARIO
 // ══════════════════════════════════════════
 let invFilter='Todos', invSearch='', invSkinFilter='', invMlVal='', invMlUnit='', invFilterActive=false;
+let invKoreanOnly=false; // ← NUEVO: filtro coreano
 
 function renderInventory() {
   return `
@@ -376,8 +337,12 @@ function renderInventory() {
       <button class="btn btn-primary btn-sm" onclick="openProductModal(null)" style="border-radius:22px;display:flex;align-items:center;gap:6px;">${icons.plus} Nuevo</button>
     </div>
   </div>
-  <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap;">
-    <span style="font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--text-light);white-space:nowrap;">Filtrar:</span>
+
+  <!-- NUEVO: Filtro Coreano -->
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+    <button onclick="window._toggleKoreanFilter()" class="btn btn-sm ${invKoreanOnly?'btn-primary':'btn-outline'}" style="display:flex;align-items:center;gap:6px;border-radius:22px;">
+      🇰🇷 ${invKoreanOnly?'Solo coreanos':'Ver coreanos'}
+    </button>
     <input id="invMlValInput" type="number" min="0" value="${invMlVal}" placeholder="Cantidad" oninput="window._invMlVal(this.value)" style="width:80px;font-family:'Jost',sans-serif;font-size:13px;border:1.5px solid var(--cream-mid);border-radius:8px;padding:6px 10px;background:var(--white);color:var(--text);outline:none;">
     <select id="invMlUnitSel" onchange="window._invMlUnit(this.value)" style="font-family:'Jost',sans-serif;font-size:13px;border:1.5px solid var(--cream-mid);border-radius:8px;padding:6px 8px;background:var(--white);color:var(--text);outline:none;">
       <option value="">Todas</option>
@@ -388,6 +353,7 @@ function renderInventory() {
     </select>
     ${(invMlVal||invMlUnit)?`<button onclick="window._invMlClear()" style="font-size:11px;color:var(--text-light);background:none;border:none;cursor:pointer;padding:4px;">✕</button>`:''}
   </div>
+
   <div style="font-size:11px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--text-light);margin-bottom:6px;">Categoría</div>
   <div class="chips" id="invChips"></div>
   <div style="font-size:11px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--text-light);margin-bottom:6px;margin-top:4px;">Tipo de piel</div>
@@ -396,12 +362,16 @@ function renderInventory() {
 }
 
 function renderInvList() {
-  const allProds = state.products.filter(p=>
+  let allProds = state.products.filter(p=>
     (p.name||'').toLowerCase().includes(invSearch.toLowerCase()) &&
     (!invSkinFilter||(invSkinFilter==='Todo tipo'?(Array.isArray(p.skin)?p.skin.includes('Todo tipo'):p.skin==='Todo tipo'):(Array.isArray(p.skin)?p.skin.includes(invSkinFilter):p.skin===invSkinFilter))) &&
     (!invMlVal||String(p.mlVal)===String(invMlVal)) &&
     (!invMlUnit||(p.mlUnit||'ml')===invMlUnit)
   );
+
+  // NUEVO: filtro coreano
+  if(invKoreanOnly) allProds = allProds.filter(p=>p.isKorean===true);
+
   let prods = !invFilterActive?[]:invFilter==='Todos'?allProds:allProds.filter(p=>p.category===invFilter);
 
   const chips = document.getElementById('invChips');
@@ -411,16 +381,19 @@ function renderInvList() {
 
   const el = document.getElementById('invList');
   if(!el) return;
-  if(!invFilterActive) { el.innerHTML=`<div class="empty">${icons.pkg}<p>Selecciona una categoría o tipo de piel para ver productos</p></div>`; return; }
+  if(!invFilterActive && !invKoreanOnly) { el.innerHTML=`<div class="empty">${icons.pkg}<p>Selecciona una categoría o tipo de piel para ver productos</p></div>`; return; }
+  if(invKoreanOnly && !invFilterActive) prods = allProds;
+
   el.innerHTML=(prods.length===0?`<div class="empty">${icons.pkg}<p>Sin productos</p></div>`:'')+
   prods.map(p=>`
   <div class="card product-card">
     <div class="product-img">${p.image?`<img src="${p.image}" alt="${p.name}">`:`<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;">${icons.pkg}</div>`}</div>
     <div class="product-info">
-      <div class="product-name">${p.name}${p.isKit?` <span class="pill pill-warn" style="font-size:10px;padding:1px 7px;">Kit</span>`:''}</div>
+      <div class="product-name">${p.name}${p.isKit?` <span class="pill pill-warn" style="font-size:10px;padding:1px 7px;">Kit</span>`:''}${p.isKorean?` <span style="font-size:12px;" title="Producto coreano">🇰🇷</span>`:''}</div>
       <div class="product-meta">${p.category||''}${p.mlVal&&p.mlUnit!=='N/A'?' · '+p.mlVal+p.mlUnit:''}</div>
-      <div style="display:flex;align-items:center;gap:8px;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <span class="product-price">${fmtMoney(p.price)}</span>
+        ${p.priceMayoreo?`<span style="font-size:11px;color:#7a6230;font-weight:600;">May: ${fmtMoney(p.priceMayoreo)}</span>`:''}
         <span class="pill ${(p.stock||0)<=3?'pill-low':(p.stock||0)<=8?'pill-warn':'pill-ok'}">${p.stock||0} uds</span>
       </div>
     </div>
@@ -437,6 +410,8 @@ window._invSkin=v=>{if(invSkinFilter===v){invSkinFilter='';}else{invSkinFilter=v
 window._invMlVal=v=>{invMlVal=v;if(v)invFilterActive=true;renderInvList();};
 window._invMlUnit=v=>{invMlUnit=v;if(v)invFilterActive=true;renderInvList();};
 window._invMlClear=()=>{invMlVal='';invMlUnit='';renderInvList();};
+// NUEVO
+window._toggleKoreanFilter=()=>{invKoreanOnly=!invKoreanOnly;const c=document.getElementById('mainContent');c.innerHTML=renderInventory();renderInvList();};
 
 // ── Product Modal ──────────────────────────
 window.openProductModal = function(id) {
@@ -460,13 +435,30 @@ window.openProductModal = function(id) {
         </div>
       </div>
     </div>
-    <div class="three-col">
-      <div class="field"><label style="color:var(--olive);">Precio $</label><input id="pPrice" type="number" value="${p.price||''}" placeholder="0" style="border-color:var(--olive-pale);font-weight:600;color:var(--olive);"></div>
-      <div class="field"><label style="color:var(--text-light);">Costo $</label><input id="pCost" type="number" value="${p.cost||''}" placeholder="0"></div>
-      <div class="field"><label>Stock</label><input id="pStock" type="number" value="${p.stock||''}" placeholder="0"></div>
+
+    <!-- PRECIOS: Menudeo, Mayoreo, Costo -->
+    <div style="background:var(--cream-dark);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px;">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--text-light);margin-bottom:10px;">Precios</div>
+      <div class="three-col">
+        <div class="field" style="margin-bottom:0;">
+          <label style="color:var(--olive);">Menudeo $</label>
+          <input id="pPrice" type="number" value="${p.price||''}" placeholder="0" style="border-color:var(--olive-pale);font-weight:600;color:var(--olive);">
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label style="color:#7a6230;">Mayoreo $</label>
+          <input id="pPriceMayoreo" type="number" value="${p.priceMayoreo||''}" placeholder="0" style="border-color:#c8a86a;font-weight:600;color:#7a6230;">
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label style="color:var(--text-light);">Costo $</label>
+          <input id="pCost" type="number" value="${p.cost||''}" placeholder="0">
+        </div>
+      </div>
     </div>
+
     <div class="two-col">
-      <div class="field"><label>Cantidad</label>
+      <div class="field"><label>Stock</label><input id="pStock" type="number" value="${p.stock||''}" placeholder="0"></div>
+      <div class="field">
+        <label>Cantidad</label>
         <div style="display:flex;gap:6px;">
           <input id="pMlVal" type="number" min="0" value="${p.mlVal||''}" placeholder="100" style="flex:1;min-width:0;">
           <select id="pMlUnit" style="width:72px;font-family:'Jost',sans-serif;font-size:14px;border:1.5px solid var(--cream-mid);border-radius:var(--radius-sm);padding:11px 8px;background:var(--white);color:var(--text);outline:none;">
@@ -477,8 +469,17 @@ window.openProductModal = function(id) {
           </select>
         </div>
       </div>
-      <div class="field"><label>Descripción</label><input id="pDesc" value="${p.description||''}" placeholder="Descripción breve..."></div>
     </div>
+    <div class="field"><label>Descripción</label><input id="pDesc" value="${p.description||''}" placeholder="Descripción breve..."></div>
+
+    <!-- NUEVO: Checkbox Coreano -->
+    <div style="display:flex;align-items:center;gap:10px;padding:12px;background:var(--cream-dark);border-radius:var(--radius-sm);margin-bottom:14px;">
+      <input type="checkbox" id="pIsKorean" ${p.isKorean?'checked':''} style="width:18px;height:18px;accent-color:var(--olive);cursor:pointer;">
+      <label for="pIsKorean" style="cursor:pointer;font-size:14px;font-weight:500;color:var(--text);display:flex;align-items:center;gap:6px;">
+        🇰🇷 Producto coreano
+      </label>
+    </div>
+
     <div style="display:flex;gap:10px;margin-top:4px;">
       ${id?`<button class="btn btn-danger" onclick="deleteProduct('${id}')">Eliminar</button>`:''}
       <button class="btn btn-primary btn-full" onclick="saveProduct('${id||''}')">Guardar</button>
@@ -511,12 +512,20 @@ window._handleImg = async function(input) {
 window.saveProduct=async function(id){
   const name=document.getElementById('pName').value.trim();
   if(!name){toast('Escribe el nombre','err');return;}
-  const data={name,category:document.getElementById('pCat').value,
+  const data={
+    name,
+    category:document.getElementById('pCat').value,
     skin:Array.from(document.querySelectorAll('#pSkinChips .chip.active')).map(b=>b.textContent).filter(Boolean),
-    mlVal:document.getElementById('pMlVal').value||'',mlUnit:document.getElementById('pMlUnit').value||'ml',
-    price:+document.getElementById('pPrice').value||0,cost:+document.getElementById('pCost').value||0,
-    stock:+document.getElementById('pStock').value||0,description:document.getElementById('pDesc').value,
-    image:document.getElementById('pImgData').value||''};
+    mlVal:document.getElementById('pMlVal').value||'',
+    mlUnit:document.getElementById('pMlUnit').value||'ml',
+    price:+document.getElementById('pPrice').value||0,
+    priceMayoreo:+document.getElementById('pPriceMayoreo').value||0, // NUEVO
+    cost:+document.getElementById('pCost').value||0,
+    stock:+document.getElementById('pStock').value||0,
+    description:document.getElementById('pDesc').value,
+    image:document.getElementById('pImgData').value||'',
+    isKorean:document.getElementById('pIsKorean').checked // NUEVO
+  };
   if(id){await updateItem('products',id,data);toast('Producto actualizado');}
   else{await db.collection('products').add({...data,createdAt:firebase.firestore.FieldValue.serverTimestamp()});toast('Producto agregado');}
   closeModal('modalProduct');
@@ -560,12 +569,23 @@ window.openKitModal=function(id){
         <div id="kitSearchDropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--white);border:1.5px solid var(--olive);border-top:none;border-radius:0 0 var(--radius-sm) var(--radius-sm);max-height:180px;overflow-y:auto;z-index:50;box-shadow:var(--shadow-lg);"></div>
       </div>
     </div>
+
+    <!-- Precios del kit -->
     <div style="background:var(--cream-dark);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px;">
       <div style="font-size:12px;color:var(--text-light);margin-bottom:4px;">Precio individual sumado</div>
       <div id="kitPriceSum" style="font-family:'Playfair Display',serif;font-size:20px;color:var(--text-mid);">$0</div>
-      <div style="font-size:12px;color:var(--text-light);margin-top:8px;margin-bottom:4px;">Precio del kit</div>
-      <input id="kitPrice" type="number" value="${k.price||''}" placeholder="0" style="width:100%;font-family:'Jost',sans-serif;font-size:18px;border:1.5px solid var(--cream-mid);border-radius:var(--radius-sm);padding:8px 12px;background:var(--white);color:var(--olive);font-weight:600;outline:none;">
+      <div class="two-col" style="margin-top:12px;">
+        <div class="field" style="margin-bottom:0;">
+          <label style="color:var(--olive);">Precio menudeo $</label>
+          <input id="kitPrice" type="number" value="${k.price||''}" placeholder="0" style="border-color:var(--olive-pale);font-weight:600;color:var(--olive);">
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label style="color:#7a6230;">Precio mayoreo $</label>
+          <input id="kitPriceMayoreo" type="number" value="${k.priceMayoreo||''}" placeholder="0" style="border-color:#c8a86a;font-weight:600;color:#7a6230;">
+        </div>
+      </div>
     </div>
+
     <div style="display:flex;gap:10px;">
       ${id?`<button class="btn btn-danger" onclick="deleteProduct('${id}')">Eliminar</button>`:''}
       <button class="btn btn-primary btn-full" onclick="saveKit('${id||''}')">Guardar kit</button>
@@ -611,7 +631,26 @@ window._handleKitImg = async function(input) {
   }
 };
 
-window.saveKit=async function(id){const name=document.getElementById('kitName').value.trim();if(!name){toast('Escribe el nombre','err');return;}const totalUnits=window._kitItems.reduce((s,i)=>s+i.qty,0);if(totalUnits<2){toast('El kit debe tener al menos 2 unidades','err');return;}const price=+document.getElementById('kitPrice').value||0;const stock=+document.getElementById('kitStock').value||0;const data={name,isKit:true,category:'Kits',skin:Array.from(document.querySelectorAll('#kitSkinChips .chip.active')).map(b=>b.textContent).filter(Boolean),description:document.getElementById('kitDesc').value,price,stock,cost:0,kitItems:[...window._kitItems],image:document.getElementById('kitImgData').value||''};if(id){await updateItem('products',id,data);toast('Kit actualizado');}else{await addItem('products',data);toast('Kit creado');}closeModal('modalKit');};
+window.saveKit=async function(id){
+  const name=document.getElementById('kitName').value.trim();
+  if(!name){toast('Escribe el nombre','err');return;}
+  const totalUnits=window._kitItems.reduce((s,i)=>s+i.qty,0);
+  if(totalUnits<2){toast('El kit debe tener al menos 2 unidades','err');return;}
+  const price=+document.getElementById('kitPrice').value||0;
+  const priceMayoreo=+document.getElementById('kitPriceMayoreo').value||0;
+  const stock=+document.getElementById('kitStock').value||0;
+  const data={
+    name,isKit:true,category:'Kits',
+    skin:Array.from(document.querySelectorAll('#kitSkinChips .chip.active')).map(b=>b.textContent).filter(Boolean),
+    description:document.getElementById('kitDesc').value,
+    price,priceMayoreo,stock,cost:0,
+    kitItems:[...window._kitItems],
+    image:document.getElementById('kitImgData').value||''
+  };
+  if(id){await updateItem('products',id,data);toast('Kit actualizado');}
+  else{await addItem('products',data);toast('Kit creado');}
+  closeModal('modalKit');
+};
 
 window.openStockModal=function(id){
   const p=state.products.find(x=>x.id===id);
@@ -625,21 +664,41 @@ window.openStockModal=function(id){
 window.applyStock=async function(id){const delta=parseInt(document.getElementById('stockDelta').value);if(isNaN(delta)){toast('Ingresa una cantidad','err');return;}const p=state.products.find(x=>x.id===id);const newStock=Math.max(0,(p.stock||0)+delta);await updateItem('products',id,{stock:newStock});toast(`Stock: ${delta>0?'+':''}${delta}`);closeModal('modalStock');};
 
 // ══════════════════════════════════════════
-// COTIZAR
+// COTIZAR — con modo Mayoreo / Menudeo
 // ══════════════════════════════════════════
 let quoteSearch='',quoteCatFilter='Todos',quoteCatActive=false,quoteSkinFilter='',quoteSkinActive=false,quoteMlVal='',quoteMlUnit='';
 let quoteDiscount=0;
+let quoteKoreanOnly=false;      // NUEVO
+let quotePriceMode='menudeo';   // NUEVO: 'menudeo' | 'mayoreo'
+
+// Helper: precio según modo
+function getPriceForMode(p) {
+  if(quotePriceMode==='mayoreo') return p.priceMayoreo||p.price||0;
+  return p.price||0;
+}
 
 function renderQuote() {
   const subtotal=cartItems.reduce((s,i)=>s+(i.price*i.qty),0);
   const discountAmt=quoteDiscount>0?Math.min(quoteDiscount,subtotal):0;
   const total=subtotal-discountAmt;
   return `
+  <!-- NUEVO: Selector Mayoreo / Menudeo -->
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;background:var(--cream-dark);border-radius:var(--radius-sm);padding:10px 14px;">
+    <span style="font-size:12px;font-weight:600;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px;flex-shrink:0;">Tipo de precio:</span>
+    <div style="display:flex;gap:6px;">
+      <button onclick="window._setPriceMode('menudeo')" class="btn btn-sm ${quotePriceMode==='menudeo'?'btn-primary':'btn-outline'}" style="border-radius:22px;">🛍 Menudeo</button>
+      <button onclick="window._setPriceMode('mayoreo')" class="btn btn-sm ${quotePriceMode==='mayoreo'?'btn-primary':'btn-outline'}" style="border-radius:22px;background:${quotePriceMode==='mayoreo'?'#7a6230':'transparent'};border-color:${quotePriceMode==='mayoreo'?'#7a6230':'var(--cream-mid)'};">📦 Mayoreo</button>
+    </div>
+    ${cartItems.length>0?`<span style="font-size:11px;color:var(--text-light);margin-left:auto;">Cambiar modo limpiará el carrito</span>`:''}
+  </div>
+
   <div class="search-wrap">
     <svg class="search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
     <input id="quoteSearch" value="${quoteSearch}" placeholder="Buscar producto..." oninput="window._quoteSearch(this.value)" autocomplete="off">
   </div>
   <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap;">
+    <!-- NUEVO: filtro coreano en cotizar -->
+    <button onclick="window._toggleQuoteKorean()" class="btn btn-sm ${quoteKoreanOnly?'btn-primary':'btn-outline'}" style="border-radius:22px;">🇰🇷 ${quoteKoreanOnly?'Coreanos':'Ver coreanos'}</button>
     <input id="quoteMlValInput" type="number" min="0" value="${quoteMlVal}" placeholder="Cantidad" oninput="window._quoteMlVal(this.value)" style="width:80px;font-family:'Jost',sans-serif;font-size:13px;border:1.5px solid var(--cream-mid);border-radius:8px;padding:6px 10px;background:var(--white);color:var(--text);outline:none;">
     <select id="quoteMlUnitSel" onchange="window._quoteMlUnit(this.value)" style="font-family:'Jost',sans-serif;font-size:13px;border:1.5px solid var(--cream-mid);border-radius:8px;padding:6px 8px;background:var(--white);color:var(--text);outline:none;">
       <option value="">Todas</option>
@@ -655,7 +714,10 @@ function renderQuote() {
   <div id="quoteGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;" class="quote-product-grid"></div>
   ${cartItems.length>0?`
   <div class="card" style="padding:16px;margin-bottom:14px;">
-    <div style="font-family:'Playfair Display',serif;font-size:18px;margin-bottom:12px;">Cotización actual</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+      <div style="font-family:'Playfair Display',serif;font-size:18px;flex:1;">Cotización actual</div>
+      <span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;${quotePriceMode==='mayoreo'?'background:#f0ead8;color:#7a6230;':'background:#daeadd;color:var(--success);}'">${quotePriceMode==='mayoreo'?'📦 MAYOREO':'🛍 MENUDEO'}</span>
+    </div>
     ${cartItems.map(i=>{const prod=state.products.find(x=>x.id===i.id);const outOfStock=prod&&(prod.stock||0)===0;return `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
       <div style="flex:1;font-size:13px;">${i.name}${outOfStock?`<span style="background:#f0dada;color:var(--danger);border-radius:4px;font-size:10px;font-weight:700;padding:1px 5px;margin-left:4px;">sin stock</span>`:''}</div>
@@ -665,7 +727,7 @@ function renderQuote() {
         <button onclick="changeQty('${i.id}',1)" style="width:26px;height:26px;border-radius:8px;border:1px solid var(--cream-mid);background:var(--white);cursor:pointer;display:flex;align-items:center;justify-content:center;">${icons.plus}</button>
         <button onclick="removeCartItem('${i.id}')" style="width:26px;height:26px;border-radius:8px;border:none;background:#f0dada;cursor:pointer;color:var(--danger);font-weight:700;font-size:15px;line-height:1;">×</button>
       </div>
-      <div style="width:72px;text-align:right;font-weight:600;color:var(--olive);font-size:13px;">${fmtMoney(i.price*i.qty)}</div>
+      <div style="width:72px;text-align:right;font-weight:600;color:${quotePriceMode==='mayoreo'?'#7a6230':'var(--olive)'};font-size:13px;">${fmtMoney(i.price*i.qty)}</div>
     </div>`;}).join('')}
     <div class="divider"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
@@ -678,7 +740,7 @@ function renderQuote() {
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;">
       <span style="font-weight:600;">Total</span>
-      <span style="font-family:'Playfair Display',serif;font-size:22px;color:var(--olive);" id="quoteTotalFinal">${fmtMoney(total)}</span>
+      <span style="font-family:'Playfair Display',serif;font-size:22px;color:${quotePriceMode==='mayoreo'?'#7a6230':'var(--olive)'};" id="quoteTotalFinal">${fmtMoney(total)}</span>
     </div>
   </div>
   <div class="field"><label>Cliente</label><input id="quoteClient" placeholder="Nombre del cliente"></div>
@@ -696,7 +758,10 @@ function renderQuote() {
     return sorted.slice(0,40).map(q=>`
   <div class="card quote-card">
     <div class="quote-header">
-      <div><div class="quote-client">${q.client||'Sin nombre'}</div><div class="quote-date">${q.date?new Date(q.date).toLocaleDateString('es-MX'):''}</div></div>
+      <div>
+        <div class="quote-client">${q.client||'Sin nombre'}</div>
+        <div class="quote-date">${q.date?new Date(q.date).toLocaleDateString('es-MX'):''}${q.priceMode?` · <span style="font-weight:600;color:${q.priceMode==='mayoreo'?'#7a6230':'var(--success)'};">${q.priceMode==='mayoreo'?'📦 Mayoreo':'🛍 Menudeo'}</span>`:''}</div>
+      </div>
       <span class="pill ${q.status==='vendida'?'pill-sold':q.status==='cancelada'?'pill-cancelled':'pill-pending'}">${q.status||'pendiente'}</span>
     </div>
     <div class="quote-items">${(q.items||[]).map(i=>`${i.name} ×${i.qty}`).join(', ')}</div>
@@ -725,20 +790,34 @@ function renderQuoteGrid() {
   if(quoteSkinActive){const specific=prods.filter(p=>Array.isArray(p.skin)?p.skin.includes(quoteSkinFilter):(p.skin||'')===quoteSkinFilter);const todoTipo=prods.filter(p=>Array.isArray(p.skin)?p.skin.includes('Todo tipo'):p.skin==='Todo tipo');prods=[...specific,...todoTipo];}
   if(quoteMlVal)prods=prods.filter(p=>String(p.mlVal)===String(quoteMlVal));
   if(quoteMlUnit)prods=prods.filter(p=>(p.mlUnit||'ml')===quoteMlUnit);
-  const anyFilter=quoteCatActive||quoteSkinActive||quoteSearch.length>0||quoteMlVal||quoteMlUnit;
+  // NUEVO: filtro coreano
+  if(quoteKoreanOnly)prods=prods.filter(p=>p.isKorean===true);
+
+  const anyFilter=quoteCatActive||quoteSkinActive||quoteSearch.length>0||quoteMlVal||quoteMlUnit||quoteKoreanOnly;
   if(!anyFilter){grid.innerHTML=`<div class="empty" style="grid-column:1/-1;">${icons.pkg}<p>Selecciona una categoría o tipo de piel</p></div>`;return;}
-  grid.innerHTML=prods.map(p=>{const inCart=cartItems.find(i=>i.id===p.id);const outOfStock=(p.stock||0)===0;return `
+
+  grid.innerHTML=prods.map(p=>{
+    const inCart=cartItems.find(i=>i.id===p.id);
+    const outOfStock=(p.stock||0)===0;
+    const displayPrice=getPriceForMode(p);
+    const hasMayoreo=p.priceMayoreo&&p.priceMayoreo>0;
+    return `
   <div class="card" style="padding:7px;cursor:pointer;border:2px solid ${inCart?'var(--olive)':'transparent'};transition:border .2s;display:flex;flex-direction:column;height:100%;" onclick="addToCart('${p.id}')">
     <div style="width:100%;aspect-ratio:1;border-radius:8px;overflow:hidden;background:var(--cream-dark);margin-bottom:6px;flex-shrink:0;position:relative;">
       ${p.image?`<img src="${p.image}" style="width:100%;height:100%;object-fit:cover;">`:`<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;">${icons.pkg}</div>`}
       ${outOfStock?`<div style="position:absolute;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;"><span style="color:#fff;font-size:9px;font-weight:700;">SIN STOCK</span></div>`:''}
       ${inCart?`<div style="position:absolute;top:4px;right:4px;background:var(--olive);color:var(--cream);border-radius:20px;font-size:10px;padding:1px 6px;font-weight:700;">×${inCart.qty}</div>`:''}
+      ${p.isKorean?`<div style="position:absolute;top:4px;left:4px;font-size:13px;" title="Coreano">🇰🇷</div>`:''}
     </div>
     <div style="flex:1;display:flex;flex-direction:column;">
       <div style="font-size:11px;font-weight:600;color:var(--text);line-height:1.3;margin-bottom:4px;word-break:break-word;">${p.name}</div>
-      <div style="margin-top:auto;display:flex;justify-content:space-between;align-items:center;">
-        <span style="color:var(--olive);font-weight:700;font-size:13px;">${fmtMoney(p.price)}</span>
-        <span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:20px;${(p.stock||0)===0?'background:#f0dada;color:var(--danger);':(p.stock||0)<=3?'background:#f0ead8;color:#7a6230;':'background:#daeadd;color:var(--success);'}">${p.stock||0}</span>
+      <div style="margin-top:auto;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="color:${quotePriceMode==='mayoreo'?'#7a6230':'var(--olive)'};font-weight:700;font-size:13px;">${fmtMoney(displayPrice)}</span>
+          <span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:20px;${(p.stock||0)===0?'background:#f0dada;color:var(--danger);':(p.stock||0)<=3?'background:#f0ead8;color:#7a6230;':'background:#daeadd;color:var(--success);'}">${p.stock||0}</span>
+        </div>
+        ${hasMayoreo&&quotePriceMode==='menudeo'?`<div style="font-size:10px;color:#7a6230;margin-top:2px;">May: ${fmtMoney(p.priceMayoreo)}</div>`:''}
+        ${hasMayoreo&&quotePriceMode==='mayoreo'?`<div style="font-size:10px;color:var(--olive);margin-top:2px;">Men: ${fmtMoney(p.price)}</div>`:''}
       </div>
     </div>
   </div>`;}).join('')||`<div class="empty" style="grid-column:1/-1;">${icons.pkg}<p>Sin productos</p></div>`;
@@ -751,10 +830,26 @@ window._quoteMlVal=v=>{quoteMlVal=v;renderQuoteGrid();};
 window._quoteMlUnit=v=>{quoteMlUnit=v;renderQuoteGrid();};
 window._quoteMlClear=()=>{quoteMlVal='';quoteMlUnit='';renderQuoteGrid();};
 window._updateDiscount=v=>{const subtotal=cartItems.reduce((s,i)=>s+(i.price*i.qty),0);quoteDiscount=Math.max(0,Math.min(+v||0,subtotal));const el=document.getElementById('quoteTotalFinal');if(el)el.textContent=fmtMoney(subtotal-quoteDiscount);};
+// NUEVOS handlers
+window._toggleQuoteKorean=()=>{quoteKoreanOnly=!quoteKoreanOnly;const c=document.getElementById('mainContent');c.innerHTML=renderQuote();renderQuoteGrid();};
+window._setPriceMode=function(mode){
+  if(mode===quotePriceMode)return;
+  if(cartItems.length>0){if(!confirm('Cambiar el tipo de precio limpiará el carrito. ¿Continuar?'))return;cartItems=[];quoteDiscount=0;}
+  quotePriceMode=mode;
+  const c=document.getElementById('mainContent');c.innerHTML=renderQuote();renderQuoteGrid();
+};
 
 function _refreshQuoteTab(){if(currentTab!==1)return;const c=document.getElementById('mainContent');c.innerHTML=renderQuote();renderQuoteGrid();}
 
-window.addToCart=function(id){const p=state.products.find(x=>x.id===id);if(!p)return;const ex=cartItems.find(i=>i.id===id);if(ex)ex.qty++;else cartItems.push({id:p.id,name:p.name,price:p.price||0,cost:p.cost||0,qty:1});if((p.stock||0)===0)toast('Sin stock — cotización preventiva','err');if(currentTab===1)_refreshQuoteTab();else renderTab();};
+window.addToCart=function(id){
+  const p=state.products.find(x=>x.id===id);if(!p)return;
+  const ex=cartItems.find(i=>i.id===id);
+  const usePrice=getPriceForMode(p);
+  if(ex)ex.qty++;
+  else cartItems.push({id:p.id,name:p.name,price:usePrice,cost:p.cost||0,qty:1,priceMode:quotePriceMode});
+  if((p.stock||0)===0)toast('Sin stock — cotización preventiva','err');
+  if(currentTab===1)_refreshQuoteTab();else renderTab();
+};
 window.removeCartItem=function(id){cartItems=cartItems.filter(x=>x.id!==id);_refreshQuoteTab();};
 window.changeQty=function(id,d){const i=cartItems.find(x=>x.id===id);if(!i)return;i.qty+=d;if(i.qty<=0)cartItems=cartItems.filter(x=>x.id!==id);if(currentTab===1)_refreshQuoteTab();else renderTab();};
 window.clearCart=function(){cartItems=[];quoteDiscount=0;quoteSearch='';quoteCatActive=false;quoteSkinActive=false;quoteSkinFilter='';const c=document.getElementById('mainContent');c.innerHTML=renderQuote();renderQuoteGrid();};
@@ -766,7 +861,7 @@ window.saveQuote=async function(){
   const subtotal=cartItems.reduce((s,i)=>s+(i.price*i.qty),0);
   const discount=Math.max(0,Math.min(quoteDiscount||0,subtotal));
   const total=subtotal-discount;
-  await addItem('quotes',{client,note,items:[...cartItems],subtotal,discount,total,status:'pendiente',date:new Date().toISOString()});
+  await addItem('quotes',{client,note,items:[...cartItems],subtotal,discount,total,status:'pendiente',date:new Date().toISOString(),priceMode:quotePriceMode});
   toast('Cotización guardada ✓');
   cartItems=[];quoteDiscount=0;quoteSearch='';quoteCatActive=false;quoteSkinActive=false;quoteSkinFilter='';
   const c=document.getElementById('mainContent');c.innerHTML=renderQuote();renderQuoteGrid();
@@ -783,6 +878,7 @@ window.deleteQuote=async function(id){
 window.editQuote=async function(id){
   const q=state.quotes.find(x=>x.id===id);if(!q)return;
   cartItems=(q.items||[]).map(i=>({...i}));quoteDiscount=q.discount||0;quoteSearch='';quoteCatActive=false;quoteSkinActive=false;quoteSkinFilter='';
+  if(q.priceMode)quotePriceMode=q.priceMode;
   state.quotes=state.quotes.filter(x=>x.id!==id);deleteItem('quotes',id);
   const c=document.getElementById('mainContent');c.innerHTML=renderQuote();renderQuoteGrid();
   const clientEl=document.getElementById('quoteClient');const noteEl=document.getElementById('quoteNote');
@@ -792,7 +888,7 @@ window.editQuote=async function(id){
 
 window.convertToSale=async function(id){
   const q=state.quotes.find(x=>x.id===id);if(!q||q.status==='vendida')return;
-  await addItem('sales',{client:q.client||'',items:q.items||[],total:q.total||0,date:new Date().toISOString()});
+  await addItem('sales',{client:q.client||'',items:q.items||[],total:q.total||0,date:new Date().toISOString(),priceMode:q.priceMode||'menudeo'});
   await updateItem('quotes',id,{status:'vendida'});
   for(const item of (q.items||[])){const p=state.products.find(x=>x.id===item.id);if(p)await updateItem('products',p.id,{stock:Math.max(0,(p.stock||0)-item.qty)});}
   toast('¡Venta registrada!');const qLocal=state.quotes.find(x=>x.id===id);if(qLocal)qLocal.status='vendida';
@@ -829,17 +925,18 @@ window.downloadQuotePDF=function(id){
   doc.setFont('helvetica');doc.setFontSize(22);doc.setTextColor(74,82,64);
   doc.text('Aplo Blossom',105,25,{align:'center'});
   doc.setFontSize(10);doc.setTextColor(138,148,128);doc.text('Cotizacion',105,33,{align:'center'});
-  doc.setFontSize(10);doc.setTextColor(90,88,72);doc.text(`Fecha: ${new Date(q.date||Date.now()).toLocaleDateString('es-MX')}`,20,45);
-  if(q.client)doc.text(`Cliente: ${q.client}`,20,52);
-  let y=65;doc.setFillColor(74,82,64);doc.rect(20,y-6,170,10,'F');doc.setTextColor(245,240,232);doc.setFontSize(10);
-  doc.text('Producto',22,y);doc.text('Cant.',120,y);doc.text('Precio',140,y);doc.text('Subtotal',165,y);
+  if(q.priceMode){doc.setFontSize(9);doc.setTextColor(q.priceMode==='mayoreo'?122:74,q.priceMode==='mayoreo'?98:130,q.priceMode==='mayoreo'?48:64);doc.text((q.priceMode==='mayoreo'?'Precio Mayoreo':'Precio Menudeo'),105,40,{align:'center'});}
+  doc.setFontSize(10);doc.setTextColor(90,88,72);doc.text(`Fecha: ${new Date(q.date||Date.now()).toLocaleDateString('es-MX')}`,20,50);
+  if(q.client)doc.text(`Cliente: ${q.client}`,20,57);
+  let y=70;doc.setFillColor(74,82,64);doc.rect(20,y-6,170,10,'F');doc.setTextColor(245,240,232);doc.setFontSize(10);
+  doc.text('Producto',22,y);doc.text('Cant.',120,y);doc.text('Precio unit.',140,y);doc.text('Subtotal',170,y);
   y+=10;doc.setTextColor(44,44,36);
   for(const item of (q.items||[])){
     const nameLines=doc.splitTextToSize((item.name||'').replace(/[^\x00-\x7F]/g,''),90);
     const rowH=Math.max(22,nameLines.length*4.2+10);
     if(y+rowH>283){doc.addPage();y=20;}
     doc.text(nameLines,22,y+5);doc.text(String(item.qty||0),120,y+rowH/2+2);
-    doc.text(fmtMoney(item.price),140,y+rowH/2+2);doc.text(fmtMoney((item.price||0)*(item.qty||0)),165,y+rowH/2+2);
+    doc.text(fmtMoney(item.price),140,y+rowH/2+2);doc.text(fmtMoney((item.price||0)*(item.qty||0)),170,y+rowH/2+2);
     y+=rowH;doc.setDrawColor(232,223,200);doc.line(20,y,190,y);
   }
   y+=6;if((q.discount||0)>0){doc.setFontSize(10);doc.setTextColor(90,88,72);doc.text(`Subtotal: ${fmtMoney(q.subtotal||q.total||0)}`,190,y,{align:'right'});y+=8;doc.setTextColor(139,58,58);doc.text(`Descuento: -${fmtMoney(q.discount)}`,190,y,{align:'right'});y+=8;}
@@ -871,7 +968,10 @@ function renderSales() {
   <div class="card" style="padding:14px;margin-bottom:10px;">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
       <span style="font-weight:600;font-size:15px;">${s.client||'Cliente'}</span>
-      <span style="font-size:11px;color:var(--text-light);">${s.date?new Date(s.date).toLocaleDateString('es-MX'):''}</span>
+      <div style="display:flex;align-items:center;gap:6px;">
+        ${s.priceMode?`<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;${s.priceMode==='mayoreo'?'background:#f0ead8;color:#7a6230;':'background:#daeadd;color:var(--success);}'">${s.priceMode==='mayoreo'?'May':'Men'}</span>`:''}
+        <span style="font-size:11px;color:var(--text-light);">${s.date?new Date(s.date).toLocaleDateString('es-MX'):''}</span>
+      </div>
     </div>
     <div style="font-size:12px;color:var(--text-light);margin-bottom:8px;">${(s.items||[]).map(i=>`${i.name} ×${i.qty}`).join(', ')}</div>
     <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -1000,7 +1100,7 @@ window.openAbonoModal=function(id){
     <p style="font-size:14px;color:var(--text-light);margin-bottom:4px;">Cliente: <strong style="color:var(--text);">${c.client||'Sin nombre'}</strong></p>
     <p style="font-size:14px;color:var(--text-light);margin-bottom:16px;">Saldo pendiente: <strong style="color:var(--danger);">${fmtMoney(c.pendiente||0)}</strong></p>
     <div class="field"><label>Monto del abono $</label><input id="abonoAmount" type="number" placeholder="0" max="${c.pendiente||0}"></div>
-    <div class="field"><label>Nota <span style="font-weight:400;text-transform:none;letter-spacing:0;">(opcional)</span></label><input id="abonoNote" placeholder="Ej: Transferencia, efectivo..."></div>
+    <div class="field"><label>Nota (opcional)</label><input id="abonoNote" placeholder="Ej: Transferencia, efectivo..."></div>
     <button class="btn btn-primary btn-full" onclick="saveAbono('${id}')">Guardar abono</button>
   `);
 };
@@ -1010,7 +1110,7 @@ window.saveAbono=async function(id){
   const amount=+document.getElementById('abonoAmount').value;
   const note=document.getElementById('abonoNote').value.trim();
   if(!amount||amount<=0){toast('Ingresa un monto','err');return;}
-  if(amount>(c.pendiente||0)){toast(`El abono no puede ser mayor al pendiente (${fmtMoney(c.pendiente)})`, 'err');return;}
+  if(amount>(c.pendiente||0)){toast(`El abono no puede ser mayor al pendiente (${fmtMoney(c.pendiente)})`,'err');return;}
   const pagos=[...(c.pagos||[]),{amount,note,date:new Date().toISOString()}];
   const pagado=(c.pagado||0)+amount;
   const pendiente=Math.max(0,(c.total||0)-pagado);
@@ -1035,7 +1135,7 @@ window.openPagoLibreModal=function(){
     <div class="modal-header"><div class="modal-title">Registrar pago recibido</div><button class="modal-close" onclick="closeModal('modalPagoLibre')">×</button></div>
     <div class="field"><label>Persona / Cliente</label><input id="plPerson" placeholder="Ej: María García"></div>
     <div class="field"><label>Monto recibido $</label><input id="plAmount" type="number" placeholder="0"></div>
-    <div class="field"><label>Descripción <span style="font-weight:400;text-transform:none;letter-spacing:0;">(opcional)</span></label><textarea id="plDesc" placeholder="Ej: Pago de deuda de enero, transferencia..."></textarea></div>
+    <div class="field"><label>Descripción (opcional)</label><textarea id="plDesc" placeholder="Ej: Pago de deuda de enero, transferencia..."></textarea></div>
     <button class="btn btn-gold btn-full" onclick="savePagoLibre()">Guardar pago</button>
   `);
 };
@@ -1181,50 +1281,68 @@ function renderCatalog() {
         ${p.image?`<img src="${p.image}" style="width:100%;height:100%;object-fit:cover;">`:`${icons.pkg}`}
       </div>
       <div style="padding:10px;">
-        <div style="font-weight:600;font-size:13px;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name}</div>
+        <div style="font-weight:600;font-size:13px;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name}${p.isKorean?' 🇰🇷':''}</div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
           <span style="font-family:'Playfair Display',serif;font-size:16px;color:var(--olive);">${fmtMoney(p.price)}</span>
           <span class="pill ${(p.stock||0)===0?'pill-low':'pill-ok'}" style="font-size:10px;">${(p.stock||0)===0?'Agotado':'En stock'}</span>
         </div>
+        ${p.priceMayoreo?`<div style="font-size:11px;color:#7a6230;margin-top:3px;">May: ${fmtMoney(p.priceMayoreo)}</div>`:''}
       </div>
     </div>`).join('')}
   </div>`;
 }
 
-window.openExportImagesModal=function(){
+// ══════════════════════════════════════════
+// EXPORTAR IMÁGENES — con selector de precio
+// ══════════════════════════════════════════
+window.openExportImagesModal = function() {
   showModal('modalExportImg',`
     <div class="modal-header"><div class="modal-title">Exportar imágenes</div><button class="modal-close" onclick="closeModal('modalExportImg')">×</button></div>
-    <div style="font-size:13px;color:var(--text-light);margin-bottom:16px;">Elige el formato de las imágenes del catálogo.</div>
+    <div style="font-size:13px;color:var(--text-light);margin-bottom:16px;">Elige qué precio mostrar en las imágenes del catálogo.</div>
     <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px;">
-      <button class="btn btn-primary btn-full" onclick="closeModal('modalExportImg');exportImages('nuevo')" style="padding:14px;text-align:left;display:flex;align-items:center;gap:12px;">
-        <span style="font-size:24px;">🖼</span>
+
+      <button class="btn btn-outline btn-full" onclick="closeModal('modalExportImg');exportImages('menudeo')" style="padding:14px;text-align:left;display:flex;align-items:center;gap:12px;">
+        <span style="font-size:24px;">🛍</span>
         <div>
-          <div style="font-weight:600;">Formato catálogo</div>
-          <div style="font-size:12px;color:rgba(245,240,232,.75);">970×1200 px — título, foto, detalles y precio</div>
+          <div style="font-weight:600;">Solo precio menudeo</div>
+          <div style="font-size:12px;color:var(--text-light);">Muestra el precio normal de venta</div>
         </div>
       </button>
+
+      <button class="btn btn-outline btn-full" onclick="closeModal('modalExportImg');exportImages('mayoreo')" style="padding:14px;text-align:left;display:flex;align-items:center;gap:12px;border-color:#c8a86a;">
+        <span style="font-size:24px;">📦</span>
+        <div>
+          <div style="font-weight:600;color:#7a6230;">Solo precio mayoreo</div>
+          <div style="font-size:12px;color:var(--text-light);">Muestra el precio de mayoreo</div>
+        </div>
+      </button>
+
+      <button class="btn btn-primary btn-full" onclick="closeModal('modalExportImg');exportImages('ambos')" style="padding:14px;text-align:left;display:flex;align-items:center;gap:12px;">
+        <span style="font-size:24px;">🏷</span>
+        <div>
+          <div style="font-weight:600;">Menudeo + Mayoreo</div>
+          <div style="font-size:12px;color:rgba(245,240,232,.75);">Muestra ambos precios en la imagen para comparar</div>
+        </div>
+      </button>
+
     </div>
   `);
-}
+};
 
-window.exportImages = async function(format = 'nuevo') {
+window.exportImages = async function(priceMode = 'menudeo') {
   const prods = state.products.filter(p => p.image && (p.stock || 0) > 0);
   if (!prods.length) { toast('No hay productos con imagen en stock', 'err'); return; }
   toast('Generando imágenes...');
 
-  // Carga imagen via proxy CORS (resuelve R2)
   const loadImgEl = (url) => new Promise(res => {
     let done = false;
     const finish = (val) => { if (!done) { done = true; res(val); } };
-    // Timeout de 8 segundos por imagen
     const timer = setTimeout(() => finish(null), 8000);
-
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.src = 'https://images.weserv.nl/?url=' + encodeURIComponent(url) + '&output=jpg&q=90';
     img.onload = () => { clearTimeout(timer); finish(img); };
     img.onerror = () => {
-      // Fallback directo
       const img2 = new Image();
       img2.crossOrigin = 'anonymous';
       img2.src = url;
@@ -1233,18 +1351,134 @@ window.exportImages = async function(format = 'nuevo') {
     };
   });
 
-  // ── DISEÑO: imagen grande izquierda, título arriba, detalles derecha ──
-  const makeCard = (p, imgEl) => new Promise(res => {
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  // ─────────────────────────────────────────────────
+  // Dibuja el área de precio en la esquina inferior
+  // Soporta: 'menudeo', 'mayoreo', 'ambos'
+  // ─────────────────────────────────────────────────
+  function drawPriceArea(ctx, p, W, H, mode) {
+    const hasMayoreo = p.priceMayoreo && p.priceMayoreo > 0;
+
+    if (mode === 'ambos' && hasMayoreo) {
+      // ── DOS PILLS: menudeo arriba, mayoreo abajo ──
+      const pillH = 70;
+      const pillGap = 10;
+      const totalPillH = pillH * 2 + pillGap;
+
+      // Pill menudeo
+      const menText = fmtMoney(p.price);
+      ctx.font = 'bold 40px Georgia, serif';
+      const menW = ctx.measureText(menText).width + 70;
+      const menX = W - menW - 28;
+      const menY = H - totalPillH - 28;
+
+      ctx.fillStyle = '#f0ece4';
+      ctx.strokeStyle = '#2a2820';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      roundRect(ctx, menX, menY, menW, pillH, pillH / 2);
+      ctx.fill(); ctx.stroke();
+
+      // Label "Menudeo"
+      ctx.font = '500 16px Arial, sans-serif';
+      ctx.fillStyle = '#888070';
+      ctx.textAlign = 'center';
+      ctx.fillText('MENUDEO', menX + menW / 2, menY + 20);
+
+      // Precio menudeo
+      ctx.font = 'bold 36px Georgia, serif';
+      ctx.fillStyle = '#2a2820';
+      ctx.fillText(menText, menX + menW / 2, menY + 56);
+
+      // Pill mayoreo
+      const mayText = fmtMoney(p.priceMayoreo);
+      ctx.font = 'bold 40px Georgia, serif';
+      const mayW = ctx.measureText(mayText).width + 70;
+      const mayX = W - mayW - 28;
+      const mayY = menY + pillH + pillGap;
+
+      ctx.fillStyle = '#f0ead8';
+      ctx.strokeStyle = '#7a6230';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      roundRect(ctx, mayX, mayY, mayW, pillH, pillH / 2);
+      ctx.fill(); ctx.stroke();
+
+      // Label "Mayoreo"
+      ctx.font = '500 16px Arial, sans-serif';
+      ctx.fillStyle = '#9a8050';
+      ctx.textAlign = 'center';
+      ctx.fillText('MAYOREO', mayX + mayW / 2, mayY + 20);
+
+      // Precio mayoreo
+      ctx.font = 'bold 36px Georgia, serif';
+      ctx.fillStyle = '#7a6230';
+      ctx.fillText(mayText, mayX + mayW / 2, mayY + 56);
+
+      return Math.min(menX, mayX); // leftmost X para los extras
+
+    } else {
+      // ── UNA SOLA PILL ──
+      const isMay = (mode === 'mayoreo') && hasMayoreo;
+      const priceVal = isMay ? p.priceMayoreo : p.price;
+      const priceText = fmtMoney(priceVal);
+      const pillH = 90;
+
+      ctx.font = 'bold 54px Georgia, serif';
+      const priceW = ctx.measureText(priceText).width;
+      const pillW = priceW + 80;
+      const pillX = W - pillW - 28;
+      const pillY = H - pillH - 28;
+
+      ctx.fillStyle = isMay ? '#f0ead8' : '#f0ece4';
+      ctx.strokeStyle = isMay ? '#7a6230' : '#2a2820';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      roundRect(ctx, pillX, pillY, pillW, pillH, pillH / 2);
+      ctx.fill(); ctx.stroke();
+
+      // Label tipo precio
+      if (isMay) {
+        ctx.font = '500 16px Arial, sans-serif';
+        ctx.fillStyle = '#9a8050';
+        ctx.textAlign = 'center';
+        ctx.fillText('MAYOREO', pillX + pillW / 2, pillY + 20);
+        ctx.font = 'bold 48px Georgia, serif';
+        ctx.fillStyle = '#7a6230';
+        ctx.fillText(priceText, pillX + pillW / 2, pillY + 68);
+      } else {
+        ctx.font = 'bold 52px Georgia, serif';
+        ctx.fillStyle = '#2a2820';
+        ctx.textAlign = 'center';
+        ctx.fillText(priceText, pillX + pillW / 2, pillY + 62);
+      }
+
+      return pillX;
+    }
+  }
+
+  const makeCard = (p, imgEl, mode) => new Promise(res => {
     const W = 970, H = 1220;
     const canvas = document.createElement('canvas');
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext('2d');
 
-    // ── Fondo gris beige suave (como la referencia) ──
     ctx.fillStyle = '#e8e4de';
     ctx.fillRect(0, 0, W, H);
 
-    // ── Decoración: curvas finas esquina superior izquierda ──
+    // Decoración curvas
     ctx.strokeStyle = '#c0b09a';
     ctx.lineWidth = 1.8;
     ctx.beginPath();
@@ -1252,12 +1486,12 @@ window.exportImages = async function(format = 'nuevo') {
     ctx.beginPath();
     ctx.moveTo(0, 245); ctx.quadraticCurveTo(80, 105, 240, 70); ctx.stroke();
 
-    // ── TÍTULO: grande, arriba a la izquierda, máx 2 líneas con elipsis ──
+    // Título
     const nombre = (p.name || '').toUpperCase();
     ctx.fillStyle = '#1a1814';
     ctx.textAlign = 'left';
     const TITLE_X = 48;
-    const maxTitleW = W - TITLE_X - 48; // usa todo el ancho del canvas
+    const maxTitleW = W - TITLE_X - 48;
 
     const calcLines = (size) => {
       ctx.font = 'bold ' + size + 'px Georgia, serif';
@@ -1265,9 +1499,8 @@ window.exportImages = async function(format = 'nuevo') {
       let lines = [], cur = '';
       for (const w of words) {
         const test = cur + w + ' ';
-        if (ctx.measureText(test).width > maxTitleW && cur) {
-          lines.push(cur.trim()); cur = w + ' ';
-        } else cur = test;
+        if (ctx.measureText(test).width > maxTitleW && cur) { lines.push(cur.trim()); cur = w + ' '; }
+        else cur = test;
       }
       lines.push(cur.trim());
       return lines;
@@ -1276,7 +1509,6 @@ window.exportImages = async function(format = 'nuevo') {
     let tSize = 90;
     let titleLines = calcLines(tSize);
     while (titleLines.length > 2 && tSize > 36) { tSize -= 4; titleLines = calcLines(tSize); }
-    // Si con tamaño mínimo sigue siendo >2 líneas, truncar la 2da con elipsis
     if (titleLines.length > 2) {
       titleLines = titleLines.slice(0, 2);
       ctx.font = 'bold ' + tSize + 'px Georgia, serif';
@@ -1289,7 +1521,7 @@ window.exportImages = async function(format = 'nuevo') {
     let ty = 108;
     for (const l of titleLines) { ctx.fillText(l, TITLE_X, ty); ty += tSize * 1.12; }
 
-    // ── FOTO: izquierda, grande, ocupa la mayor parte del alto ──
+    // Foto
     const imgX = 30, imgY = ty + 30;
     const imgW = 610, imgH = H - imgY - 30;
 
@@ -1297,7 +1529,6 @@ window.exportImages = async function(format = 'nuevo') {
     ctx.beginPath();
     roundRect(ctx, imgX, imgY, imgW, imgH, 18);
     ctx.clip();
-    // Fondo del recuadro (para cuando la imagen no llena todo)
     ctx.fillStyle = '#e8e4de';
     ctx.fillRect(imgX, imgY, imgW, imgH);
     if (imgEl) {
@@ -1308,17 +1539,15 @@ window.exportImages = async function(format = 'nuevo') {
     }
     ctx.restore();
 
-    // ── DETALLES: columna derecha ──
+    // Columna derecha — detalles
     const colX = imgX + imgW + 36;
     const colW = W - colX - 28;
     ctx.textAlign = 'left';
 
-    // Frases de descripción (texto completo, sin truncar, wrap natural)
     const descFrases = p.description
       ? p.description.split(/[.,;]/).map(s => s.trim()).filter(Boolean)
       : [p.name || ''];
 
-    // Datos extra: ml y tipo de piel (color diferente)
     const extraItems = [];
     const skinArr = Array.isArray(p.skin)
       ? p.skin.filter(s => s && s !== 'No aplica')
@@ -1327,64 +1556,33 @@ window.exportImages = async function(format = 'nuevo') {
     const mlVal = String(p.mlVal || '').trim();
     const mlUnit = String(p.mlUnit || '').trim();
     if (mlVal && mlVal !== '0' && mlUnit && mlUnit !== 'N/A') extraItems.push(mlVal + ' ' + mlUnit);
+    if (p.isKorean) extraItems.push('🇰🇷 Coreano');
 
-    // Límite máximo de Y para el texto (deja espacio para el precio + margen)
-    const pillH = 90;
-    const maxTextY = H - pillH - 28 - 20; // 20px de margen sobre el precio
+    // Calcular espacio reservado para pills de precio
+    const hasMayoreo = p.priceMayoreo && p.priceMayoreo > 0;
+    const priceAreaH = (mode === 'ambos' && hasMayoreo) ? (70 * 2 + 10 + 28 + 20) : (90 + 28 + 20);
+    const maxTextY = H - priceAreaH;
 
-    // Función: dibujar texto con wrap, respetando límite de Y
-    // Devuelve { y: Y final, clipped: true si se cortó }
-    const drawWrapped = (text, x, startY, maxW, font, color, lineH, yLimit) => {
-      ctx.font = font;
-      ctx.fillStyle = color;
-      const words = text.toUpperCase().split(' ');
-      let line = '', curY = startY;
-      for (const w of words) {
-        const test = line + w + ' ';
-        if (ctx.measureText(test).width > maxW && line) {
-          if (curY > yLimit) return { y: curY, clipped: true };
-          ctx.fillText(line.trim(), x, curY);
-          line = w + ' '; curY += lineH;
-        } else line = test;
-      }
-      // Última línea: verificar si cabe
-      if (curY > yLimit) return { y: curY, clipped: true };
-      // Si es la última línea y la siguiente Y ya rebasaría, agregar …
-      const lastLine = line.trim();
-      ctx.fillText(lastLine, x, curY);
-      return { y: curY + lineH, clipped: false };
-    };
-
-    // Función: dibujar con elipsis al final si se corta
     const drawWrappedSafe = (text, x, startY, maxW, font, color, lineH) => {
       ctx.font = font;
       ctx.fillStyle = color;
       const words = text.toUpperCase().split(' ');
       let line = '', curY = startY;
-
       for (let i = 0; i < words.length; i++) {
         const w = words[i];
         const test = line + w + ' ';
-        const isLast = i === words.length - 1;
-
         if (ctx.measureText(test).width > maxW && line) {
-          // ¿Cabe otra línea?
           const nextY = curY + lineH;
           if (nextY + lineH > maxTextY) {
-            // No cabe más: agregar … al final de esta línea
             let truncLine = line.trim();
-            while (ctx.measureText(truncLine + '…').width > maxW && truncLine.length > 1)
-              truncLine = truncLine.slice(0, -1);
+            while (ctx.measureText(truncLine + '…').width > maxW && truncLine.length > 1) truncLine = truncLine.slice(0, -1);
             ctx.fillText(truncLine + '…', x, curY);
             return { y: curY + lineH, clipped: true };
           }
           ctx.fillText(line.trim(), x, curY);
           line = w + ' '; curY += lineH;
-        } else {
-          line = test;
-        }
+        } else line = test;
       }
-      // Última línea pendiente
       if (curY > maxTextY) return { y: curY, clipped: true };
       ctx.fillText(line.trim(), x, curY);
       return { y: curY + lineH, clipped: false };
@@ -1398,14 +1596,12 @@ window.exportImages = async function(format = 'nuevo') {
     let descClipped = false;
     for (const frase of descFrases) {
       if (descClipped) break;
-      // Verificar si hay espacio para al menos 1 línea más
       if (dy + descLineH > maxTextY) break;
       const result = drawWrappedSafe(frase, colX, dy, colW, descFont, '#2a2820', descLineH);
       dy = result.y + descGap;
-      if (result.clipped) { descClipped = true; }
+      if (result.clipped) descClipped = true;
     }
 
-    // Datos extra en color más tenue (solo si no se cortó antes y hay espacio)
     let extrasShownAbove = false;
     if (!descClipped) {
       dy += 10;
@@ -1421,49 +1617,30 @@ window.exportImages = async function(format = 'nuevo') {
       extrasShownAbove = allFit;
     }
 
-    // ── PRECIO: pill esquina inferior derecha ──
-    const priceText = fmtMoney(p.price);
-    ctx.font = 'bold 54px Georgia, serif';
-    const priceW = ctx.measureText(priceText).width;
-    const pillW = priceW + 80;
-    const pillX = W - pillW - 28, pillY = H - pillH - 28;
+    // Dibuja precio(s) — devuelve el X más a la izquierda de la pill
+    const leftmostPillX = drawPriceArea(ctx, p, W, H, mode);
 
-    ctx.fillStyle = '#f0ece4';
-    ctx.strokeStyle = '#2a2820';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    roundRect(ctx, pillX, pillY, pillW, pillH, pillH / 2);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = '#2a2820';
-    ctx.font = 'bold 52px Georgia, serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(priceText, pillX + pillW / 2, pillY + 62);
-
-    // Si los extras no se mostraron arriba, ponerlos a la izquierda del precio
+    // Extras que no cupieron arriba → junto al precio
     if (!extrasShownAbove && extraItems.length) {
-      const extraText = extraItems.join('  ·  ').toUpperCase();
-      ctx.font = '500 20px Arial, sans-serif';
-      ctx.fillStyle = '#7a7060';
-      ctx.textAlign = 'right';
-      const maxExtraW = pillX - colX - 16;
-      // Wrap en máx 2 líneas
-      const eWords = extraText.split(' ');
-      let eLine = '', eLines = [];
-      for (const w of eWords) {
-        const test = eLine + w + ' ';
-        if (ctx.measureText(test).width > maxExtraW && eLine) {
-          eLines.push(eLine.trim()); eLine = w + ' ';
-        } else eLine = test;
-      }
-      eLines.push(eLine.trim());
-      eLines = eLines.slice(0, 2);
-      const eLineH = 26;
-      const eTotalH = eLines.length * eLineH;
-      const eStartY = pillY + (pillH - eTotalH) / 2 + eLineH - 4;
-      for (let i = 0; i < eLines.length; i++) {
-        ctx.fillText(eLines[i], pillX - 16, eStartY + i * eLineH);
+      const extraText = extraItems.filter(e => !e.includes('🇰🇷')).join('  ·  ').toUpperCase();
+      if (extraText) {
+        ctx.font = '500 20px Arial, sans-serif';
+        ctx.fillStyle = '#7a7060';
+        ctx.textAlign = 'right';
+        const maxExtraW = leftmostPillX - colX - 16;
+        const pillBottomRef = H - (mode === 'ambos' && hasMayoreo ? 28 : 28);
+        const pillTopRef = H - (mode === 'ambos' && hasMayoreo ? (70*2+10+28) : (90+28));
+        const eWords = extraText.split(' ');
+        let eLine = '', eLines = [];
+        for (const w of eWords) {
+          const test = eLine + w + ' ';
+          if (ctx.measureText(test).width > maxExtraW && eLine) { eLines.push(eLine.trim()); eLine = w + ' '; } else eLine = test;
+        }
+        eLines.push(eLine.trim()); eLines = eLines.slice(0, 2);
+        const eLineH = 26;
+        const eTotalH = eLines.length * eLineH;
+        const eStartY = pillTopRef + (pillBottomRef - pillTopRef - eTotalH) / 2 + eLineH;
+        for (let i = 0; i < eLines.length; i++) ctx.fillText(eLines[i], leftmostPillX - 16, eStartY + i * eLineH);
       }
     }
 
@@ -1474,26 +1651,12 @@ window.exportImages = async function(format = 'nuevo') {
     }, 'image/jpeg', 0.92);
   });
 
-  // Helper roundRect compatible con todos los browsers
-  function roundRect(ctx, x, y, w, h, r) {
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-    ctx.lineTo(x + w, y + h - r);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
-    ctx.closePath();
-  }
-
   const zip = new JSZip();
   let count = 0;
   for (const p of prods) {
     try {
       const imgEl = await loadImgEl(p.image);
-      const result = await makeCard(p, imgEl);
+      const result = await makeCard(p, imgEl, priceMode);
       if (result) { zip.file(result.fname, result.blob); count++; }
       toast(`Procesando... ${count}/${prods.length}`);
     } catch (e) { console.error(e); }
@@ -1502,56 +1665,66 @@ window.exportImages = async function(format = 'nuevo') {
   const zipBlob = await zip.generateAsync({ type: 'blob' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(zipBlob);
-  a.download = 'catalogo-aploblossom.zip';
+  const modeLabel = priceMode === 'ambos' ? 'ambos-precios' : priceMode;
+  a.download = `catalogo-aploblossom-${modeLabel}.zip`;
   document.body.appendChild(a); a.click();
   setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 1000);
-  toast(`ZIP descargado (${count} imágenes)`);
+  toast(`ZIP descargado (${count} imágenes - ${priceMode})`);
 };
-window.exportStockExcel=function(){
+
+window.exportStockExcel = function() {
   if(!state.products.length){toast('No hay productos','err');return;}
-  const headers=['Nombre','Categoría','Tipo de piel','Cantidad','Unidad','Precio ($)','Costo ($)','Stock','Descripción','Imagen (URL)'];
+  const headers=['Nombre','Categoría','Tipo de piel','Cantidad','Unidad','Precio Menudeo ($)','Precio Mayoreo ($)','Costo ($)','Stock','Coreano','Descripción','Imagen (URL)'];
   const escape=v=>{const s=String(v==null?'':v).replace(/"/g,'""');return/[",\n]/.test(s)?'"'+s+'"':s;};
-  const lines=[headers.map(escape).join(','),...state.products.map(p=>[p.name||'',p.category||'',Array.isArray(p.skin)?p.skin.join(', '):(p.skin||''),p.mlVal||'',p.mlUnit||'',p.price||0,p.cost||0,p.stock||0,p.description||'',p.image||''].map(escape).join(','))];
+  const lines=[headers.map(escape).join(','),...state.products.map(p=>[
+    p.name||'',p.category||'',
+    Array.isArray(p.skin)?p.skin.join(', '):(p.skin||''),
+    p.mlVal||'',p.mlUnit||'',
+    p.price||0, p.priceMayoreo||0, p.cost||0, p.stock||0,
+    p.isKorean?'Sí':'No',
+    p.description||'',p.image||''
+  ].map(escape).join(','))];
   const blob=new Blob(['\uFEFF'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='inventario-aploblossom-'+new Date().toISOString().slice(0,10)+'.csv';
   document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(a.href);
   toast('Inventario exportado ✓');
 };
 
-window.exportCatalog=function(onlyInStock){
+window.exportCatalog = function(onlyInStock) {
   const prods=onlyInStock?state.products.filter(p=>(p.stock||0)>0):state.products;
   if(!prods.length){toast('Sin productos para exportar','err');return;}
   toast('Generando PDF...');
   const{jsPDF}=window.jspdf;const doc=new jsPDF({format:'a4',unit:'mm'});
   const clean=str=>(str||'').replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27FF}]/gu,'').replace(/\s+/g,' ').trim();
   const PW=210,PH=297,ML=12,MR=12,usableW=PW-ML-MR;
-  const IMG_W=22,COL_IMG=ML,COL_NAME=ML+IMG_W+5,NAME_W=55,COL_DESC=COL_NAME+NAME_W+5,DESC_W=62,COL_PRICE=COL_DESC+DESC_W+5;
+  const IMG_W=22,COL_IMG=ML,COL_NAME=ML+IMG_W+5,NAME_W=45,COL_DESC=COL_NAME+NAME_W+5,DESC_W=55,COL_PRICE=COL_DESC+DESC_W+5,COL_MAY=COL_PRICE+28;
   const drawHeader=()=>{doc.setFillColor(74,82,64);doc.rect(0,0,PW,18,'F');doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(245,240,232);doc.text('Aplo Blossom',ML,12);doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(184,149,90);doc.text(onlyInStock?'Productos en stock':'Catalogo completo',ML,16.5);doc.text(new Date().toLocaleDateString('es-MX',{month:'long',year:'numeric'}),PW-MR,16.5,{align:'right'});};
-  const drawTableHeader=y=>{doc.setFillColor(220,213,196);doc.rect(ML,y,usableW,6.5,'F');doc.setFont('helvetica','bold');doc.setFontSize(7);doc.setTextColor(74,82,64);doc.text('Producto',COL_NAME,y+4.5);doc.text('Descripcion',COL_DESC,y+4.5);doc.text('Precio',COL_PRICE,y+4.5);return y+9;};
+  const drawTableHeader=y=>{doc.setFillColor(220,213,196);doc.rect(ML,y,usableW,6.5,'F');doc.setFont('helvetica','bold');doc.setFontSize(7);doc.setTextColor(74,82,64);doc.text('Producto',COL_NAME,y+4.5);doc.text('Descripcion',COL_DESC,y+4.5);doc.text('Menudeo',COL_PRICE,y+4.5);doc.text('Mayoreo',COL_MAY,y+4.5);return y+9;};
   drawHeader();let y=drawTableHeader(22);let rowCount=0;
-  const addRow=(p,imgData)=>{const IMG_H=22;const LINE_NAME=4.2;const nameClean=clean(p.name);const descClean=clean(p.description);const metaClean=clean([p.category,p.mlVal&&p.mlUnit!=='N/A'?p.mlVal+p.mlUnit:''].filter(Boolean).join(' · '));doc.setFont('helvetica','bold');doc.setFontSize(8);const nameLines=doc.splitTextToSize(nameClean,NAME_W);doc.setFont('helvetica','normal');doc.setFontSize(7);const descLines=descClean?doc.splitTextToSize(descClean,DESC_W):[];const nameH=nameLines.length*LINE_NAME+(metaClean?4.5:0);const descH=descLines.length*3.9;const rowH=Math.max(IMG_H,nameH,descH)+8;if(y+rowH>PH-14){doc.addPage();drawHeader();y=drawTableHeader(22);rowCount=0;}if(rowCount%2===1){doc.setFillColor(250,247,242);doc.rect(ML,y,usableW,rowH,'F');}const imgY=y+(rowH-IMG_H)/2;doc.setFillColor(237,229,212);doc.setDrawColor(210,203,188);doc.rect(COL_IMG,imgY,IMG_W,IMG_H,'FD');if(imgData){ try{ doc.addImage(imgData,COL_IMG,imgY,IMG_W,IMG_H); }catch(e){} }let tx=y+5;doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(30,30,24);nameLines.forEach(l=>{doc.text(l,COL_NAME,tx);tx+=LINE_NAME;});if(metaClean){doc.setFont('helvetica','normal');doc.setFontSize(6.5);doc.setTextColor(110,110,90);doc.text(metaClean,COL_NAME,tx);}let dtx=y+5;doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(80,78,68);descLines.slice(0,9).forEach(l=>{doc.text(l,COL_DESC,dtx);dtx+=3.9;});doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(74,82,64);doc.text(fmtMoney(p.price),COL_PRICE,y+6);doc.setDrawColor(222,214,200);doc.line(ML,y+rowH,PW-MR,y+rowH);y+=rowH;rowCount++;};
-  
-  const loadImg = p => new Promise(res => {
-  if (!p.image) { res(null); return; }
-  let done = false;
-  const finish = (val) => { if (!done) { done = true; res(val); } };
-  const timer = setTimeout(() => finish(null), 8000);
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  // Proxy que añade headers CORS — resuelve el problema de R2
-  img.src = 'https://images.weserv.nl/?url=' + encodeURIComponent(p.image) + '&output=jpg&q=85';
-  img.onload = () => { clearTimeout(timer); finish(img); };
-  img.onerror = () => {
-    // Fallback sin proxy
-    const img2 = new Image();
-    img2.crossOrigin = 'anonymous';
-    img2.src = p.image;
-    img2.onload = () => { clearTimeout(timer); finish(img2); };
-    img2.onerror = () => { clearTimeout(timer); finish(null); };
-  };
-});
+  const addRow=(p,imgData)=>{const IMG_H=22;const LINE_NAME=4.2;const nameClean=clean(p.name);const descClean=clean(p.description);const metaClean=clean([p.category,p.mlVal&&p.mlUnit!=='N/A'?p.mlVal+p.mlUnit:'',p.isKorean?'Coreano':''].filter(Boolean).join(' · '));doc.setFont('helvetica','bold');doc.setFontSize(8);const nameLines=doc.splitTextToSize(nameClean,NAME_W);doc.setFont('helvetica','normal');doc.setFontSize(7);const descLines=descClean?doc.splitTextToSize(descClean,DESC_W):[];const nameH=nameLines.length*LINE_NAME+(metaClean?4.5:0);const descH=descLines.length*3.9;const rowH=Math.max(IMG_H,nameH,descH)+8;if(y+rowH>PH-14){doc.addPage();drawHeader();y=drawTableHeader(22);rowCount=0;}if(rowCount%2===1){doc.setFillColor(250,247,242);doc.rect(ML,y,usableW,rowH,'F');}const imgY=y+(rowH-IMG_H)/2;doc.setFillColor(237,229,212);doc.setDrawColor(210,203,188);doc.rect(COL_IMG,imgY,IMG_W,IMG_H,'FD');if(imgData){try{doc.addImage(imgData,COL_IMG,imgY,IMG_W,IMG_H);}catch(e){}}let tx=y+5;doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(30,30,24);nameLines.forEach(l=>{doc.text(l,COL_NAME,tx);tx+=LINE_NAME;});if(metaClean){doc.setFont('helvetica','normal');doc.setFontSize(6.5);doc.setTextColor(110,110,90);doc.text(metaClean,COL_NAME,tx);}let dtx=y+5;doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(80,78,68);descLines.slice(0,9).forEach(l=>{doc.text(l,COL_DESC,dtx);dtx+=3.9;});// Precio menudeo
+  doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(74,82,64);doc.text(fmtMoney(p.price),COL_PRICE,y+7);
+  // Precio mayoreo
+  if(p.priceMayoreo){doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(122,98,48);doc.text(fmtMoney(p.priceMayoreo),COL_MAY,y+7);}
+  doc.setDrawColor(222,214,200);doc.line(ML,y+rowH,PW-MR,y+rowH);y+=rowH;rowCount++;};
 
-  
+  const loadImg = p => new Promise(res => {
+    if (!p.image) { res(null); return; }
+    let done = false;
+    const finish = (val) => { if (!done) { done = true; res(val); } };
+    const timer = setTimeout(() => finish(null), 8000);
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = 'https://images.weserv.nl/?url=' + encodeURIComponent(p.image) + '&output=jpg&q=85';
+    img.onload = () => { clearTimeout(timer); finish(img); };
+    img.onerror = () => {
+      const img2 = new Image();
+      img2.crossOrigin = 'anonymous';
+      img2.src = p.image;
+      img2.onload = () => { clearTimeout(timer); finish(img2); };
+      img2.onerror = () => { clearTimeout(timer); finish(null); };
+    };
+  });
+
   Promise.all(prods.map(loadImg)).then(imgs=>{prods.forEach((p,i)=>addRow(p,imgs[i]));doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(160,155,140);doc.text(prods.length+' productos · Aplo Blossom',PW/2,PH-6,{align:'center'});doc.save('catalogo-aploblossom-'+(onlyInStock?'disponible':'completo')+'.pdf');toast('PDF descargado');});
 };
 
