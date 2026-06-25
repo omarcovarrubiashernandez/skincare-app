@@ -1474,7 +1474,7 @@ window.exportImages = async function(priceMode = 'menudeo') {
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext('2d');
 
-    ctx.fillStyle = '#e8e4de';
+    ctx.fillStyle = '#f2ede8';
     ctx.fillRect(0, 0, W, H);
 
     // Decoración curvas
@@ -1510,13 +1510,13 @@ window.exportImages = async function(priceMode = 'menudeo') {
     while (titleLines.length > 2 && tSize > 36) { tSize -= 4; titleLines = calcLines(tSize); }
     if (titleLines.length > 2) {
       titleLines = titleLines.slice(0, 2);
-      ctx.font = 'bold ' + tSize + 'px Georgia, serif';
+      ctx.font = '900 ' + tSize + 'px Arial Black, sans-serif';
       let l2 = titleLines[1];
       while (ctx.measureText(l2 + '…').width > maxTitleW && l2.length > 1) l2 = l2.slice(0, -1);
       titleLines[1] = l2 + '…';
     }
 
-    ctx.font = 'bold ' + tSize + 'px Georgia, serif';
+    ctx.font = '900 ' + tSize + 'px Arial Black, sans-serif';
     let ty = 108;
     for (const l of titleLines) { ctx.fillText(l, TITLE_X, ty); ty += tSize * 1.12; }
 
@@ -1526,9 +1526,9 @@ window.exportImages = async function(priceMode = 'menudeo') {
 
     ctx.save();
     ctx.beginPath();
-    roundRect(ctx, imgX, imgY, imgW, imgH, 18);
+    roundRect(ctx, imgX, imgY, imgW, imgH, 36);
     ctx.clip();
-    ctx.fillStyle = '#e8e4de';
+    ctx.fillStyle = '#f2ede8';
     ctx.fillRect(imgX, imgY, imgW, imgH);
     if (imgEl) {
       const iw = imgEl.naturalWidth, ih = imgEl.naturalHeight;
