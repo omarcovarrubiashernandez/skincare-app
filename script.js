@@ -969,7 +969,7 @@ function renderSales() {
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
       <span style="font-weight:600;font-size:15px;">${s.client||'Cliente'}</span>
       <div style="display:flex;align-items:center;gap:6px;">
-        ${s.priceMode?`<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;${s.priceMode==='mayoreo'?'background:#f0ead8;color:#7a6230;':'background:#daeadd;color:var(--success);}'">${s.priceMode==='mayoreo'?'May':'Men'}</span>`:''}
+        ${s.priceMode?`<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;${s.priceMode==='mayoreo'?'background:#f0ead8;color:#7a6230;':'background:#daeadd;color:var(--success);'}">${s.priceMode==='mayoreo'?'May':'Men'}</span>`:''}
         <span style="font-size:11px;color:var(--text-light);">${s.date?new Date(s.date).toLocaleDateString('es-MX'):''}</span>
       </div>
     </div>
