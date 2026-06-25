@@ -716,8 +716,7 @@ function renderQuote() {
   <div class="card" style="padding:16px;margin-bottom:14px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
       <div style="font-family:'Playfair Display',serif;font-size:18px;flex:1;">Cotización actual</div>
-      <span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;${quotePriceMode==='mayoreo'?'background:#f0ead8;color:#7a6230;':'background:#daeadd;color:var(--success);'}">${quotePriceMode==='mayoreo'?'📦 MAYOREO':'🛍 MENUDEO'}</span>
-    </div>
+        <span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;${quotePriceMode==='mayoreo'?'background:#f0ead8;color:#7a6230;':'background:#daeadd;color:var(--success);'}">${quotePriceMode==='mayoreo'?'MAYOREO':'MENUDEO'}</span>    </div>
     ${cartItems.map(i=>{const prod=state.products.find(x=>x.id===i.id);const outOfStock=prod&&(prod.stock||0)===0;return `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
       <div style="flex:1;font-size:13px;">${i.name}${outOfStock?`<span style="background:#f0dada;color:var(--danger);border-radius:4px;font-size:10px;font-weight:700;padding:1px 5px;margin-left:4px;">sin stock</span>`:''}</div>
