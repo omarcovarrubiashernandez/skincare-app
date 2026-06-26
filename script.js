@@ -1596,7 +1596,7 @@ window.exportImages = async function(priceMode = 'menudeo') {
     for (const frase of descFrases) {
       if (descClipped) break;
       if (dy + descLineH > maxTextY) break;
-      const result = drawWrappedSafe(frase, colX, dy, colW, descFont, '#2a2820', descLineH);
+      const result = drawWrappedSafe('― ' + frase, colX, dy, colW, descFont, '#2a2820', descLineH);
       dy = result.y + descGap;
       if (result.clipped) descClipped = true;
     }
