@@ -14,6 +14,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <!-- Chart.js para las gráficas financieras -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <!-- CSS (externo) -->
   <link rel="stylesheet" href="styles.css?v=1779471067">
 </head>
@@ -31,11 +33,7 @@
       <div class="brand-name">Aplo Blossom</div>
     </div>
 
-    <!-- Saldo en cuenta -->
-    <div class="sidebar-saldo" onclick="openSaldoModal()">
-      <div class="s-label">Saldo en cuenta</div>
-      <div class="s-val" id="headerSaldo">—</div>
-    </div>
+    <!-- (Se eliminó el Saldo en cuenta superior según tu solicitud) -->
 
     <!-- Stats rápidos -->
     <div class="sidebar-stats">
@@ -98,11 +96,7 @@
         <div style="font-size:9px;letter-spacing:3px;color:var(--olive-pale);font-weight:500;text-transform:uppercase;margin-bottom:2px;">Mi Negocio</div>
         <div class="brand-name">Aplo Blossom</div>
       </div>
-      <!-- Saldo (mobile) -->
-      <div onclick="openSaldoModal()" style="text-align:right;cursor:pointer;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:8px 14px;">
-        <div style="font-size:9px;letter-spacing:.8px;color:var(--olive-pale);font-weight:500;text-transform:uppercase;margin-bottom:2px;">Saldo</div>
-        <div id="headerSaldo" style="font-family:'Playfair Display',serif;font-size:18px;color:var(--cream);">—</div>
-      </div>
+      <!-- (Se eliminó el Saldo en cuenta superior en móvil) -->
     </div>
 
     <!-- Stats rápidos (mobile) -->
