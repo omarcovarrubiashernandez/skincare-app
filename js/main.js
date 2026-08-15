@@ -26,7 +26,12 @@ let currentTab = 0;
 
 window.setTab = function(i) {
   currentTab = i;
-  document.querySelectorAll('.nav-item').forEach((b, j) => b.classList.toggle('active', i === j));
+  
+document.querySelectorAll('.nav-item').forEach(b=>{
+  const id = +b.id.replace('nav','');
+  b.classList.toggle('active', i===id);
+});
+
   document.querySelectorAll('.mobile-nav-btn').forEach(b => {
     const id = +b.id.replace('mnav', '');
     b.classList.toggle('active', i === id);
