@@ -95,6 +95,63 @@ window.openExportImagesModal = function() {
   `);
 };
 
+// ══════════════════════════════════════════
+// BUG FIX #1 — sanitizador de texto para jsPDF
+// jsPDF usa la fuente estándar Helvetica, que solo entiende el
+// alfabeto Latin-1/WinAnsi (256 caracteres). stripEmoji() no
+// cubre TODOS los símbolos posibles (☀️✨💧 comillas curvas,
+// guiones largos, etc). Cualquier residuo que se le cuele rompe
+// el cálculo de ancho de letra en jsPDF: aparece el símbolo "þ"
+// (byte 0xFE de esa tabla) y las letras siguientes se ven
+// separadas como si fueran monoespaciadas.
+// pdfSafe() no confía solo en stripEmoji: al final tira CUALQUIER
+// carácter fuera de Latin-1, sea cual sea, como red de seguridad.
+// ══════════════════════════════════════════
+function pdfSafe(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/[\u{1F1E6}-\u{1F1FF}]/gu, '')  // banderas
+    .replace(/[\u{1F300}-\u{1FAFF}]/gu, '')  // emoji principales
+    .replace(/[\u{2600}-\u{27BF}]/gu, '')    // símbolos/dingbats (☀ ✨ ❤ ✓...)
+    .replace(/[\u{2190}-\u{21FF}]/gu, '')    // flechas
+    .replace(/[\u{2B00}-\u{2BFF}]/gu, '')    // símbolos varios
+    .replace(/[\u{FE00}-\u{FE0F}]/gu, '')    // selectores de variación
+    .replace(/\u200D/g, '')                  // zero-width joiner
+    .replace(/[\u2018\u2019]/g, "'")         // comillas curvas simples
+    .replace(/[\u201C\u201D]/g, '"')         // comillas curvas dobles
+    .replace(/[\u2013\u2014]/g, '-')         // guiones en/em dash
+    .replace(/\u2026/g, '...')               // puntos suspensivos
+    .replace(/[^\x00-\xFF]/g, '')            // red de seguridad: cualquier otro
+                                              // carácter fuera de Latin-1/WinAnsi
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// ══════════════════════════════════════════
+// BUG FIX #2 — carga de imágenes con concurrencia limitada
+// Antes se disparaban las 200+ peticiones de imagen al mismo
+// tiempo con Promise.all(prods.map(loadImg)). Los navegadores
+// solo permiten ~6 conexiones simultáneas por dominio, así que
+// la mayoría de esas imágenes se quedaban en cola y expiraban
+// (timeout de 8s) antes de alcanzar a cargar — por eso salían
+// los cuadros vacíos en vez de la foto.
+// loadImagesLimited() mantiene solo `concurrency` peticiones
+// activas a la vez y va tomando la siguiente en cuanto una
+// termina, así todas alcanzan a cargar dentro de su timeout.
+// ══════════════════════════════════════════
+async function loadImagesLimited(items, loaderFn, concurrency = 6) {
+  const results = new Array(items.length);
+  let idx = 0;
+  async function worker() {
+    while (idx < items.length) {
+      const current = idx++;
+      results[current] = await loaderFn(items[current]);
+    }
+  }
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
+  return results;
+}
+
 window.exportImages = async function(priceMode = 'menudeo') {
   const prods = state.products.filter(p => p.image && (p.stock || 0) > 0);
   if (!prods.length) { toast('No hay productos con imagen en stock', 'err'); return; }
@@ -450,8 +507,9 @@ window.exportCatalog = function(onlyInStock) {
   if (!prods.length) { toast('Sin productos para exportar', 'err'); return; }
   toast('Generando PDF...');
   const { jsPDF } = window.jspdf; const doc = new jsPDF({ format: 'a4', unit: 'mm' });
-  // Nota: clean() ya remueve emojis (rango unicode) antes de medir/dibujar texto en el PDF
-  const clean = str => stripEmoji(str || '').replace(/\s+/g, ' ').trim();
+  // BUG FIX: pdfSafe() reemplaza a clean() — filtra cualquier carácter
+  // problemático, no solo emojis, antes de medir/dibujar texto en el PDF
+  const clean = str => pdfSafe(str);
   const PW = 210, PH = 297, ML = 12, MR = 12, usableW = PW - ML - MR;
   const IMG_W = 22, COL_IMG = ML, COL_NAME = ML + IMG_W + 5, NAME_W = 45, COL_DESC = COL_NAME + NAME_W + 5, DESC_W = 55, COL_PRICE = COL_DESC + DESC_W + 5, COL_MAY = COL_PRICE + 28;
   const drawHeader = () => { doc.setFillColor(74, 82, 64); doc.rect(0, 0, PW, 18, 'F'); doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(245, 240, 232); doc.text('Aplo Blossom', ML, 12); doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(184, 149, 90); doc.text(onlyInStock ? 'Productos en stock' : 'Catalogo completo', ML, 16.5); doc.text(new Date().toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }), PW - MR, 16.5, { align: 'right' }); };
@@ -502,7 +560,12 @@ window.exportCatalog = function(onlyInStock) {
     };
   });
 
-  Promise.all(prods.map(loadImg)).then(imgs => {
+  // BUG FIX: antes era Promise.all(prods.map(loadImg)) — disparaba TODAS
+  // las peticiones de imagen a la vez (hasta 200+), y el navegador solo
+  // procesa ~6 en paralelo por dominio, así que la mayoría se quedaban en
+  // cola y expiraban antes del timeout de 8s (por eso salían vacías).
+  // loadImagesLimited mantiene solo 6 activas a la vez.
+  loadImagesLimited(prods, loadImg, 6).then(imgs => {
     prods.forEach((p, i) => addRow(p, imgs[i]));
     doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(160, 155, 140);
     doc.text(prods.length + ' productos · Aplo Blossom', PW / 2, PH - 6, { align: 'center' });
