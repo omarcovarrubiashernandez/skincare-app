@@ -177,13 +177,14 @@ function ensureFonts() {
       const link = document.createElement('link');
       link.id = '_aploFontsLink';
       link.rel = 'stylesheet';
-      link.href = 'https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,600&family=Dancing+Script:wght@600;700&display=swap';
+      link.href = 'https://fonts.googleapis.com/css2?family=Poppins:wght@700;800;900&family=Playfair+Display:wght@700;900&family=Dancing+Script:wght@600;700&display=swap';
       document.head.appendChild(link);
     }
     Promise.all([
+      document.fonts.load('900 90px "Poppins"'),
+      document.fonts.load('800 90px "Poppins"'),
+      document.fonts.load('700 24px "Poppins"'),
       document.fonts.load('900 90px "Playfair Display"'),
-      document.fonts.load('700 90px "Playfair Display"'),
-      document.fonts.load('italic 600 60px "Playfair Display"'),
       document.fonts.load('600 60px "Dancing Script"'),
       document.fonts.load('700 60px "Dancing Script"')
     ]).then(() => resolve()).catch(() => resolve());
@@ -213,10 +214,10 @@ function drawIcon(ctx, type, cx, cy, r) {
   ctx.fill();
   ctx.strokeStyle = CARD.olive;
   ctx.fillStyle = CARD.olive;
-  ctx.lineWidth = 2.6;
+  ctx.lineWidth = 3.4;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  const s = r * 0.5;
+  const s = r * 0.55;
   switch (type) {
     case 'sun':
       ctx.beginPath(); ctx.arc(cx, cy, s * 0.55, 0, Math.PI * 2); ctx.stroke();
@@ -388,23 +389,7 @@ const makeCard = (p, imgEl, mode) => new Promise(res => {
   ctx.fillStyle = CARD.bg;
   ctx.fillRect(0, 0, W, H);
 
-  // ── Encabezado de marca ──
-  const brandY = 46;
-  drawFlowerMark(ctx, W / 2, 22, 12);
-  ctx.font = '600 22px Georgia, serif';
-  ctx.fillStyle = CARD.olive;
-  ctx.textAlign = 'center';
-  const brandText = 'A P L O   B L O S S O M';
-  ctx.fillText(brandText, W / 2, brandY);
-  const brandW = ctx.measureText(brandText).width;
-  ctx.strokeStyle = CARD.line;
-  ctx.lineWidth = 1.4;
-  ctx.beginPath();
-  ctx.moveTo(M + 10, brandY - 6); ctx.lineTo(W / 2 - brandW / 2 - 22, brandY - 6); ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(W / 2 + brandW / 2 + 22, brandY - 6); ctx.lineTo(W - M - 10, brandY - 6); ctx.stroke();
-
-  // ── Nombre del producto (serif bold, mayúsculas) ──
+  // ── Nombre del producto (sans-serif black, mayúsculas — estilo etiqueta) ──
   const nombre = stripEmoji(p.name || '').toUpperCase();
   const TITLE_X = M;
   const maxTitleW = W - TITLE_X - M;
@@ -412,16 +397,16 @@ const makeCard = (p, imgEl, mode) => new Promise(res => {
   ctx.fillStyle = CARD.ink;
 
   const calcTitleLines = (size) => {
-    ctx.font = '900 ' + size + 'px Georgia, "Playfair Display", serif';
+    ctx.font = '900 ' + size + 'px Poppins, Arial, sans-serif';
     return wrapLines(ctx, nombre, maxTitleW, 2);
   };
-  let tSize = 78;
+  let tSize = 84;
   let titleLines = calcTitleLines(tSize);
   while (ctx.measureText(titleLines[0] || '').width > maxTitleW && tSize > 34) { tSize -= 4; titleLines = calcTitleLines(tSize); }
 
-  let ty = 108;
-  ctx.font = '900 ' + tSize + 'px Georgia, "Playfair Display", serif';
-  for (const l of titleLines) { ctx.fillText(l, TITLE_X, ty); ty += tSize * 1.08; }
+  let ty = 92;
+  ctx.font = '900 ' + tSize + 'px Poppins, Arial, sans-serif';
+  for (const l of titleLines) { ctx.fillText(l, TITLE_X, ty); ty += tSize * 1.05; }
 
   // ── Subtítulo estilo script (categoría o primera frase corta) ──
   const descClean = stripEmoji(p.description || '');
@@ -458,8 +443,10 @@ const makeCard = (p, imgEl, mode) => new Promise(res => {
   ctx.fillStyle = CARD.oliveSoft;
   ctx.fillRect(imgX, imgY, imgW, imgH);
   if (imgEl) {
+    // "cover": la foto llena todo el recuadro (recortando sobrante) en vez
+    // de dejar franjas vacías alrededor como hacía "contain".
     const iw = imgEl.naturalWidth, ih = imgEl.naturalHeight;
-    const sc = Math.min(imgW / iw, imgH / ih);
+    const sc = Math.max(imgW / iw, imgH / ih);
     const dw = iw * sc, dh = ih * sc;
     ctx.drawImage(imgEl, imgX + (imgW - dw) / 2, imgY + (imgH - dh) / 2, dw, dh);
   }
@@ -473,7 +460,7 @@ const makeCard = (p, imgEl, mode) => new Promise(res => {
   // ── Columna de características (icono + texto + separador) ──
   const colX = imgX + imgW + 40;
   const colW = W - colX - M;
-  const iconR = 28;
+  const iconR = 36;
 
   const extraItems = [];
   const skinArr = Array.isArray(p.skin) ? p.skin.filter(s => s && s !== 'No aplica') : (p.skin && p.skin !== 'No aplica' ? [p.skin] : []);
@@ -484,61 +471,85 @@ const makeCard = (p, imgEl, mode) => new Promise(res => {
   if (p.isKorean) extraItems.push('Producto coreano');
   if (p.isMini) extraItems.push('Presentación mini');
 
-  const featureItems = (descFrases.length ? descFrases : [nombre]).slice(0, 5);
+  // Máximo 4 puntos para que cada uno tenga espacio de sobra y nada se corte
+  const featureItems = (descFrases.length ? descFrases : [nombre]).slice(0, 4);
   const bottomChips = extraItems.slice(0, 3);
 
-  let iy = imgY + 6;
   const textX = colX + iconR * 2 + 18;
   const textW = colW - iconR * 2 - 18;
-  const labelFont = '700 21px Arial, sans-serif';
-  const lineH = 26;
+  const availH = (H - priceAreaH - 20) - (imgY + 6);
+  const itemGap = 24;
 
+  // Encuentra el tamaño de fuente más grande que permite que TODOS los
+  // puntos quepan sin recortar texto (en vez de forzar "…" a la mitad
+  // de una frase). Solo si ni el tamaño mínimo alcanza, se acorta.
+  let featFontSize = 24, featLineH = 30, chosenLayout = null, chosenMaxLines = 5;
+  for (; featFontSize >= 16; featFontSize -= 2, featLineH -= 2) {
+    ctx.font = '700 ' + featFontSize + 'px Poppins, Arial, sans-serif';
+    let totalH = 0;
+    const layout = featureItems.map(frase => {
+      const lines = wrapLines(ctx, frase.toUpperCase(), textW, chosenMaxLines);
+      const h = Math.max(lines.length * featLineH, iconR * 2 - 6);
+      totalH += h + itemGap;
+      return { lines, h };
+    });
+    if (totalH - itemGap <= availH) { chosenLayout = layout; break; }
+  }
+  if (!chosenLayout) {
+    // último recurso: tamaño mínimo, se acepta el recorte con "…"
+    ctx.font = '700 16px Poppins, Arial, sans-serif';
+    chosenLayout = featureItems.map(frase => {
+      const lines = wrapLines(ctx, frase.toUpperCase(), textW, 3);
+      return { lines, h: Math.max(lines.length * featLineH, iconR * 2 - 6) };
+    });
+    featFontSize = 16; featLineH = 20;
+  }
+
+  let iy = imgY + 6;
   for (let i = 0; i < featureItems.length; i++) {
     const frase = featureItems[i];
     const icon = pickIcon(frase);
-    const cy = iy + iconR;
+    const { lines, h: blockH } = chosenLayout[i];
+    const cy = iy + Math.max(blockH, iconR * 2) / 2;
     drawIcon(ctx, icon, colX + iconR, cy, iconR);
 
-    ctx.font = labelFont;
+    ctx.font = '700 ' + featFontSize + 'px Poppins, Arial, sans-serif';
     ctx.fillStyle = CARD.ink;
     ctx.textAlign = 'left';
-    const lines = wrapLines(ctx, frase.toUpperCase(), textW, 3);
-    const blockH = Math.max(lines.length * lineH, iconR * 2 - 8);
-    const startY = cy - (lines.length * lineH) / 2 + lineH * 0.75;
-    lines.forEach((l, li) => ctx.fillText(l, textX, startY + li * lineH));
+    const startY = cy - (lines.length * featLineH) / 2 + featLineH * 0.72;
+    lines.forEach((l, li) => ctx.fillText(l, textX, startY + li * featLineH));
 
-    iy += Math.max(blockH, iconR * 2) + 22;
+    iy += Math.max(blockH, iconR * 2) + itemGap;
     if (i < featureItems.length - 1) {
       ctx.strokeStyle = CARD.line;
       ctx.lineWidth = 1.2;
       ctx.beginPath();
-      ctx.moveTo(colX, iy - 12);
-      ctx.lineTo(colX + colW, iy - 12);
+      ctx.moveTo(colX, iy - itemGap / 2);
+      ctx.lineTo(colX + colW, iy - itemGap / 2);
       ctx.stroke();
     }
-    if (iy > H - priceAreaH - 20) break;
   }
 
   // ── Chips inferiores (bajo la imagen) ──
   if (bottomChips.length) {
     let cx = imgX;
-    const chipY = imgY + imgH + 22;
-    ctx.font = '600 17px Arial, sans-serif';
+    const chipY = imgY + imgH + 30;
+    ctx.font = '600 19px Arial, sans-serif';
     bottomChips.forEach((chip, i) => {
       const label = chip.toUpperCase();
       const tw = ctx.measureText(label).width;
-      const chipW = tw + 44;
+      const chipW = tw + 56;
       if (cx + chipW > imgX + imgW) return;
-      drawIcon(ctx, pickIcon(chip), cx + 14, chipY, 14);
+      drawIcon(ctx, pickIcon(chip), cx + 18, chipY, 18);
       ctx.fillStyle = CARD.inkSoft;
       ctx.textAlign = 'left';
-      ctx.fillText(label, cx + 32, chipY + 6);
-      cx += chipW + 22;
+      ctx.fillText(label, cx + 40, chipY + 7);
+      cx += chipW + 24;
       if (i < bottomChips.length - 1) {
         ctx.strokeStyle = CARD.line;
         ctx.beginPath();
-        ctx.moveTo(cx - 14, chipY - 12);
-        ctx.lineTo(cx - 14, chipY + 12);
+        ctx.moveTo(cx - 16, chipY - 14);
+        ctx.lineTo(cx - 16, chipY + 14);
         ctx.stroke();
       }
     });
