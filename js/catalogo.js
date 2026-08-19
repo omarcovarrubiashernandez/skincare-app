@@ -152,10 +152,413 @@ async function loadImagesLimited(items, loaderFn, concurrency = 6) {
   return results;
 }
 
+// ══════════════════════════════════════════
+// REDISEÑO DE TARJETA — branding + iconos + tipografía
+// ══════════════════════════════════════════
+// Paleta (coincide con el verde ya usado en el PDF: rgb(74,82,64))
+const CARD = {
+  bg: '#f6f1e8',
+  ink: '#26241c',
+  inkSoft: '#5c5748',
+  olive: '#4a5240',
+  oliveSoft: '#e4e2d6',
+  gold: '#7a6230',
+  goldSoft: '#f0ead8',
+  line: '#d9d2c2'
+};
+
+// Carga (una sola vez) las fuentes de Google usadas en la tarjeta.
+// Si ya están cargadas en la página no vuelve a inyectar el <link>.
+let _fontsReady = null;
+function ensureFonts() {
+  if (_fontsReady) return _fontsReady;
+  _fontsReady = new Promise((resolve) => {
+    if (!document.getElementById('_aploFontsLink')) {
+      const link = document.createElement('link');
+      link.id = '_aploFontsLink';
+      link.rel = 'stylesheet';
+      link.href = 'https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,600&family=Dancing+Script:wght@600;700&display=swap';
+      document.head.appendChild(link);
+    }
+    Promise.all([
+      document.fonts.load('900 90px "Playfair Display"'),
+      document.fonts.load('700 90px "Playfair Display"'),
+      document.fonts.load('italic 600 60px "Playfair Display"'),
+      document.fonts.load('600 60px "Dancing Script"'),
+      document.fonts.load('700 60px "Dancing Script"')
+    ]).then(() => resolve()).catch(() => resolve());
+  });
+  return _fontsReady;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// Icono simple dibujado con paths (sin dependencias externas)
+function drawIcon(ctx, type, cx, cy, r) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = CARD.oliveSoft;
+  ctx.fill();
+  ctx.strokeStyle = CARD.olive;
+  ctx.fillStyle = CARD.olive;
+  ctx.lineWidth = 2.6;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const s = r * 0.5;
+  switch (type) {
+    case 'sun':
+      ctx.beginPath(); ctx.arc(cx, cy, s * 0.55, 0, Math.PI * 2); ctx.stroke();
+      for (let i = 0; i < 8; i++) {
+        const a = (Math.PI / 4) * i;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * s * 0.85, cy + Math.sin(a) * s * 0.85);
+        ctx.lineTo(cx + Math.cos(a) * s * 1.2, cy + Math.sin(a) * s * 1.2);
+        ctx.stroke();
+      }
+      break;
+    case 'leaf':
+      ctx.beginPath();
+      ctx.moveTo(cx - s * 0.7, cy + s * 0.75);
+      ctx.quadraticCurveTo(cx - s * 0.95, cy - s * 0.55, cx + s * 0.1, cy - s * 0.9);
+      ctx.quadraticCurveTo(cx + s * 0.95, cy - s * 0.55, cx + s * 0.7, cy + s * 0.75);
+      ctx.quadraticCurveTo(cx, cy + s * 0.4, cx - s * 0.7, cy + s * 0.75);
+      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx - s * 0.6, cy + s * 0.6); ctx.lineTo(cx + s * 0.55, cy - s * 0.55); ctx.stroke();
+      break;
+    case 'drop':
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - s * 1.05);
+      ctx.quadraticCurveTo(cx + s * 0.95, cy + s * 0.2, cx, cy + s * 0.9);
+      ctx.quadraticCurveTo(cx - s * 0.95, cy + s * 0.2, cx, cy - s * 1.05);
+      ctx.stroke();
+      break;
+    case 'heart':
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + s * 0.8);
+      ctx.bezierCurveTo(cx - s * 1.15, cy - s * 0.2, cx - s * 0.4, cy - s * 1.05, cx, cy - s * 0.35);
+      ctx.bezierCurveTo(cx + s * 0.4, cy - s * 1.05, cx + s * 1.15, cy - s * 0.2, cx, cy + s * 0.8);
+      ctx.stroke();
+      break;
+    case 'flag':
+      ctx.beginPath();
+      ctx.moveTo(cx - s * 0.65, cy - s); ctx.lineTo(cx - s * 0.65, cy + s); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - s * 0.65, cy - s * 0.9);
+      ctx.lineTo(cx + s * 0.85, cy - s * 0.55);
+      ctx.lineTo(cx - s * 0.65, cy - s * 0.2);
+      ctx.closePath(); ctx.fill();
+      break;
+    default: // sparkle
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - s); ctx.lineTo(cx + s * 0.3, cy - s * 0.3);
+      ctx.lineTo(cx + s, cy); ctx.lineTo(cx + s * 0.3, cy + s * 0.3);
+      ctx.lineTo(cx, cy + s); ctx.lineTo(cx - s * 0.3, cy + s * 0.3);
+      ctx.lineTo(cx - s, cy); ctx.lineTo(cx - s * 0.3, cy - s * 0.3);
+      ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function pickIcon(text) {
+  const t = (text || '').toLowerCase();
+  if (/(protector|solar|spf|fps|\bsol\b)/.test(t)) return 'sun';
+  if (/(formulad|extracto|centella|asiática|natural|ingredient|botanic)/.test(t)) return 'leaf';
+  if (/(hidrat|calmante|serum|sérum|textura|ligera|acuos|nutr)/.test(t)) return 'drop';
+  if (/(piel sensible|dermat|hipoalerg|sensible|bebé|bebe)/.test(t)) return 'heart';
+  if (/(original|coreano|certificad|garantiz)/.test(t)) return 'flag';
+  return 'sparkle';
+}
+
+// Dibuja pequeño logo de flor (4 pétalos) para el encabezado de marca
+function drawFlowerMark(ctx, cx, cy, r) {
+  ctx.save();
+  ctx.fillStyle = CARD.olive;
+  for (let i = 0; i < 4; i++) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate((Math.PI / 2) * i + Math.PI / 4);
+    ctx.beginPath();
+    ctx.ellipse(0, -r * 0.65, r * 0.42, r * 0.65, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.32, 0, Math.PI * 2);
+  ctx.fillStyle = CARD.gold;
+  ctx.fill();
+  ctx.restore();
+}
+
+// Envuelve texto a un ancho máximo y devuelve las líneas (sin dibujar)
+function wrapLines(ctx, text, maxW, maxLines) {
+  const words = String(text).split(' ');
+  const lines = [];
+  let cur = '';
+  for (const w of words) {
+    const test = cur ? cur + ' ' + w : w;
+    if (ctx.measureText(test).width > maxW && cur) {
+      lines.push(cur);
+      cur = w;
+      if (maxLines && lines.length >= maxLines) break;
+    } else {
+      cur = test;
+    }
+  }
+  if (cur && (!maxLines || lines.length < maxLines)) lines.push(cur);
+  if (maxLines && lines.length > maxLines) lines.length = maxLines;
+  if (maxLines && lines.length === maxLines) {
+    let last = lines[maxLines - 1];
+    while (ctx.measureText(last + '…').width > maxW && last.length > 1) last = last.slice(0, -1);
+    lines[maxLines - 1] = last + (ctx.measureText(text).width > maxW ? '…' : '');
+  }
+  return lines;
+}
+
+// Franja de precio sólida (menudeo / mayoreo / ambos)
+function drawPriceBadge(ctx, p, W, H, mode) {
+  const hasMayoreo = p.priceMayoreo && p.priceMayoreo > 0;
+  const M = 50;
+
+  const drawOne = (text, label, x, y, w, h, fill, textColor, labelColor) => {
+    ctx.beginPath();
+    roundRect(ctx, x, y, w, h, h / 2);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.textAlign = 'center';
+    if (label) {
+      ctx.font = '700 15px Arial, sans-serif';
+      ctx.fillStyle = labelColor;
+      ctx.fillText(label, x + w / 2, y + 22);
+      ctx.font = '900 34px Georgia, "Playfair Display", serif';
+      ctx.fillStyle = textColor;
+      ctx.fillText(text, x + w / 2, y + h - 16);
+    } else {
+      ctx.font = '900 46px Georgia, "Playfair Display", serif';
+      ctx.fillStyle = textColor;
+      ctx.fillText(text, x + w / 2, y + h / 2 + 16);
+    }
+  };
+
+  if (mode === 'ambos' && hasMayoreo) {
+    const pillH = 78, gap = 12;
+    const menText = fmtMoney(p.price), mayText = fmtMoney(p.priceMayoreo);
+    ctx.font = '900 34px Georgia, serif';
+    const menW = Math.max(ctx.measureText(menText).width + 70, 180);
+    const mayW = Math.max(ctx.measureText(mayText).width + 70, 180);
+    const w = Math.max(menW, mayW);
+    const x = W - w - M;
+    const menY = H - (pillH * 2 + gap) - M;
+    const mayY = menY + pillH + gap;
+    drawOne(menText, 'MENUDEO', x, menY, w, pillH, CARD.olive, '#f5f0e8', '#c9c2a8');
+    drawOne(mayText, 'MAYOREO', x, mayY, w, pillH, CARD.gold, '#f5f0e8', '#e0cfa0');
+    return x;
+  } else {
+    const isMay = mode === 'mayoreo' && hasMayoreo;
+    const priceVal = isMay ? p.priceMayoreo : p.price;
+    const priceText = fmtMoney(priceVal);
+    const pillH = 100;
+    ctx.font = '900 46px Georgia, serif';
+    const w = Math.max(ctx.measureText(priceText).width + 90, 220);
+    const x = W - w - M;
+    const y = H - pillH - M;
+    drawOne(priceText, isMay ? 'MAYOREO' : null, x, y, w, pillH, isMay ? CARD.gold : CARD.olive, '#f5f0e8', '#e0cfa0');
+    return x;
+  }
+}
+
+const makeCard = (p, imgEl, mode) => new Promise(res => {
+  const W = 970, H = 1220, M = 50;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  // ── Fondo ──
+  ctx.fillStyle = CARD.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // ── Encabezado de marca ──
+  const brandY = 46;
+  drawFlowerMark(ctx, W / 2, 22, 12);
+  ctx.font = '600 22px Georgia, serif';
+  ctx.fillStyle = CARD.olive;
+  ctx.textAlign = 'center';
+  const brandText = 'A P L O   B L O S S O M';
+  ctx.fillText(brandText, W / 2, brandY);
+  const brandW = ctx.measureText(brandText).width;
+  ctx.strokeStyle = CARD.line;
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(M + 10, brandY - 6); ctx.lineTo(W / 2 - brandW / 2 - 22, brandY - 6); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(W / 2 + brandW / 2 + 22, brandY - 6); ctx.lineTo(W - M - 10, brandY - 6); ctx.stroke();
+
+  // ── Nombre del producto (serif bold, mayúsculas) ──
+  const nombre = stripEmoji(p.name || '').toUpperCase();
+  const TITLE_X = M;
+  const maxTitleW = W - TITLE_X - M;
+  ctx.textAlign = 'left';
+  ctx.fillStyle = CARD.ink;
+
+  const calcTitleLines = (size) => {
+    ctx.font = '900 ' + size + 'px Georgia, "Playfair Display", serif';
+    return wrapLines(ctx, nombre, maxTitleW, 2);
+  };
+  let tSize = 78;
+  let titleLines = calcTitleLines(tSize);
+  while (ctx.measureText(titleLines[0] || '').width > maxTitleW && tSize > 34) { tSize -= 4; titleLines = calcTitleLines(tSize); }
+
+  let ty = 108;
+  ctx.font = '900 ' + tSize + 'px Georgia, "Playfair Display", serif';
+  for (const l of titleLines) { ctx.fillText(l, TITLE_X, ty); ty += tSize * 1.08; }
+
+  // ── Subtítulo estilo script (categoría o primera frase corta) ──
+  const descClean = stripEmoji(p.description || '');
+  const descFrases = descClean ? descClean.split(/[.,;]/).map(s => s.trim()).filter(Boolean) : [];
+  let subtitle = (p.category || '').trim();
+  if (!subtitle && descFrases[0] && descFrases[0].split(' ').length <= 6) subtitle = descFrases[0];
+
+  ty += 8;
+  if (subtitle) {
+    let sSize = 46;
+    ctx.font = sSize + 'px "Dancing Script", cursive';
+    let sub = subtitle;
+    while (ctx.measureText(sub).width > maxTitleW && sSize > 26) { sSize -= 3; ctx.font = sSize + 'px "Dancing Script", cursive'; }
+    ctx.fillStyle = CARD.olive;
+    ctx.fillText(sub, TITLE_X, ty + sSize * 0.7);
+    ty += sSize * 0.95;
+  }
+  ty += 18;
+
+  // ── Imagen del producto ──
+  const priceAreaH = (() => {
+    const hasMayoreo = p.priceMayoreo && p.priceMayoreo > 0;
+    return (mode === 'ambos' && hasMayoreo) ? (78 * 2 + 12 + M) : (100 + M);
+  })();
+
+  const imgX = M, imgY = ty;
+  const imgW = 540;
+  const imgH = H - imgY - priceAreaH - 24;
+
+  ctx.save();
+  ctx.beginPath();
+  roundRect(ctx, imgX, imgY, imgW, imgH, 32);
+  ctx.clip();
+  ctx.fillStyle = CARD.oliveSoft;
+  ctx.fillRect(imgX, imgY, imgW, imgH);
+  if (imgEl) {
+    const iw = imgEl.naturalWidth, ih = imgEl.naturalHeight;
+    const sc = Math.min(imgW / iw, imgH / ih);
+    const dw = iw * sc, dh = ih * sc;
+    ctx.drawImage(imgEl, imgX + (imgW - dw) / 2, imgY + (imgH - dh) / 2, dw, dh);
+  }
+  ctx.restore();
+  ctx.strokeStyle = CARD.line;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  roundRect(ctx, imgX, imgY, imgW, imgH, 32);
+  ctx.stroke();
+
+  // ── Columna de características (icono + texto + separador) ──
+  const colX = imgX + imgW + 40;
+  const colW = W - colX - M;
+  const iconR = 28;
+
+  const extraItems = [];
+  const skinArr = Array.isArray(p.skin) ? p.skin.filter(s => s && s !== 'No aplica') : (p.skin && p.skin !== 'No aplica' ? [p.skin] : []);
+  if (skinArr.length) extraItems.push(skinArr.join(', '));
+  const mlVal = String(p.mlVal || '').trim();
+  const mlUnit = String(p.mlUnit || '').trim();
+  if (mlVal && mlVal !== '0' && mlUnit && mlUnit !== 'N/A') extraItems.push(mlVal + ' ' + mlUnit);
+  if (p.isKorean) extraItems.push('Producto coreano');
+  if (p.isMini) extraItems.push('Presentación mini');
+
+  const featureItems = (descFrases.length ? descFrases : [nombre]).slice(0, 5);
+  const bottomChips = extraItems.slice(0, 3);
+
+  let iy = imgY + 6;
+  const textX = colX + iconR * 2 + 18;
+  const textW = colW - iconR * 2 - 18;
+  const labelFont = '700 21px Arial, sans-serif';
+  const lineH = 26;
+
+  for (let i = 0; i < featureItems.length; i++) {
+    const frase = featureItems[i];
+    const icon = pickIcon(frase);
+    const cy = iy + iconR;
+    drawIcon(ctx, icon, colX + iconR, cy, iconR);
+
+    ctx.font = labelFont;
+    ctx.fillStyle = CARD.ink;
+    ctx.textAlign = 'left';
+    const lines = wrapLines(ctx, frase.toUpperCase(), textW, 3);
+    const blockH = Math.max(lines.length * lineH, iconR * 2 - 8);
+    const startY = cy - (lines.length * lineH) / 2 + lineH * 0.75;
+    lines.forEach((l, li) => ctx.fillText(l, textX, startY + li * lineH));
+
+    iy += Math.max(blockH, iconR * 2) + 22;
+    if (i < featureItems.length - 1) {
+      ctx.strokeStyle = CARD.line;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(colX, iy - 12);
+      ctx.lineTo(colX + colW, iy - 12);
+      ctx.stroke();
+    }
+    if (iy > H - priceAreaH - 20) break;
+  }
+
+  // ── Chips inferiores (bajo la imagen) ──
+  if (bottomChips.length) {
+    let cx = imgX;
+    const chipY = imgY + imgH + 22;
+    ctx.font = '600 17px Arial, sans-serif';
+    bottomChips.forEach((chip, i) => {
+      const label = chip.toUpperCase();
+      const tw = ctx.measureText(label).width;
+      const chipW = tw + 44;
+      if (cx + chipW > imgX + imgW) return;
+      drawIcon(ctx, pickIcon(chip), cx + 14, chipY, 14);
+      ctx.fillStyle = CARD.inkSoft;
+      ctx.textAlign = 'left';
+      ctx.fillText(label, cx + 32, chipY + 6);
+      cx += chipW + 22;
+      if (i < bottomChips.length - 1) {
+        ctx.strokeStyle = CARD.line;
+        ctx.beginPath();
+        ctx.moveTo(cx - 14, chipY - 12);
+        ctx.lineTo(cx - 14, chipY + 12);
+        ctx.stroke();
+      }
+    });
+  }
+
+  // ── Precio ──
+  drawPriceBadge(ctx, p, W, H, mode);
+
+  canvas.toBlob(blob => {
+    const fname = (p.name || 'producto').replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g, '').trim().replace(/ +/g, '_');
+    canvas.width = 1; canvas.height = 1;
+    res({ fname: fname + '.jpg', blob });
+  }, 'image/jpeg', 0.92);
+});
+
 window.exportImages = async function(priceMode = 'menudeo') {
   const prods = state.products.filter(p => p.image && (p.stock || 0) > 0);
   if (!prods.length) { toast('No hay productos con imagen en stock', 'err'); return; }
   toast('Generando imágenes...');
+  await ensureFonts();
 
   const loadImgEl = (url) => new Promise(res => {
     let done = false;
@@ -172,291 +575,6 @@ window.exportImages = async function(priceMode = 'menudeo') {
       img2.onload = () => { clearTimeout(timer); finish(img2); };
       img2.onerror = () => { clearTimeout(timer); finish(null); };
     };
-  });
-
-  function roundRect(ctx, x, y, w, h, r) {
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-    ctx.lineTo(x + w, y + h - r);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
-    ctx.closePath();
-  }
-
-  function drawPriceArea(ctx, p, W, H, mode) {
-    const hasMayoreo = p.priceMayoreo && p.priceMayoreo > 0;
-
-    if (mode === 'ambos' && hasMayoreo) {
-      const pillH = 70;
-      const pillGap = 10;
-      const totalPillH = pillH * 2 + pillGap;
-
-      const menText = fmtMoney(p.price);
-      ctx.font = 'bold 40px Georgia, serif';
-      const menW = ctx.measureText(menText).width + 70;
-      const menX = W - menW - 28;
-      const menY = H - totalPillH - 28;
-
-      ctx.fillStyle = '#f0ece4';
-      ctx.strokeStyle = '#2a2820';
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      roundRect(ctx, menX, menY, menW, pillH, pillH / 2);
-      ctx.fill(); ctx.stroke();
-
-      ctx.font = '500 16px Arial, sans-serif';
-      ctx.fillStyle = '#888070';
-      ctx.textAlign = 'center';
-      ctx.fillText('MENUDEO', menX + menW / 2, menY + 20);
-
-      ctx.font = 'bold 36px Georgia, serif';
-      ctx.fillStyle = '#2a2820';
-      ctx.fillText(menText, menX + menW / 2, menY + 56);
-
-      const mayText = fmtMoney(p.priceMayoreo);
-      ctx.font = 'bold 40px Georgia, serif';
-      const mayW = ctx.measureText(mayText).width + 70;
-      const mayX = W - mayW - 28;
-      const mayY = menY + pillH + pillGap;
-
-      ctx.fillStyle = '#f0ead8';
-      ctx.strokeStyle = '#7a6230';
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      roundRect(ctx, mayX, mayY, mayW, pillH, pillH / 2);
-      ctx.fill(); ctx.stroke();
-
-      ctx.font = '500 16px Arial, sans-serif';
-      ctx.fillStyle = '#9a8050';
-      ctx.textAlign = 'center';
-      ctx.fillText('MAYOREO', mayX + mayW / 2, mayY + 20);
-
-      ctx.font = 'bold 36px Georgia, serif';
-      ctx.fillStyle = '#7a6230';
-      ctx.fillText(mayText, mayX + mayW / 2, mayY + 56);
-
-      return Math.min(menX, mayX);
-
-    } else {
-      const isMay = (mode === 'mayoreo') && hasMayoreo;
-      const priceVal = isMay ? p.priceMayoreo : p.price;
-      const priceText = fmtMoney(priceVal);
-      const pillH = 90;
-
-      ctx.font = 'bold 54px Georgia, serif';
-      const priceW = ctx.measureText(priceText).width;
-      const pillW = priceW + 80;
-      const pillX = W - pillW - 28;
-      const pillY = H - pillH - 28;
-
-      ctx.fillStyle = isMay ? '#f0ead8' : '#f0ece4';
-      ctx.strokeStyle = isMay ? '#7a6230' : '#2a2820';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      roundRect(ctx, pillX, pillY, pillW, pillH, pillH / 2);
-      ctx.fill(); ctx.stroke();
-
-      if (isMay) {
-        ctx.font = '500 16px Arial, sans-serif';
-        ctx.fillStyle = '#9a8050';
-        ctx.textAlign = 'center';
-        ctx.fillText('MAYOREO', pillX + pillW / 2, pillY + 20);
-        ctx.font = 'bold 48px Georgia, serif';
-        ctx.fillStyle = '#7a6230';
-        ctx.fillText(priceText, pillX + pillW / 2, pillY + 68);
-      } else {
-        ctx.font = 'bold 52px Georgia, serif';
-        ctx.fillStyle = '#2a2820';
-        ctx.textAlign = 'center';
-        ctx.fillText(priceText, pillX + pillW / 2, pillY + 62);
-      }
-
-      return pillX;
-    }
-  }
-
-  const makeCard = (p, imgEl, mode) => new Promise(res => {
-    const W = 970, H = 1220;
-    const canvas = document.createElement('canvas');
-    canvas.width = W; canvas.height = H;
-    const ctx = canvas.getContext('2d');
-
-    ctx.fillStyle = '#f2ede8';
-    ctx.fillRect(0, 0, W, H);
-
-    ctx.strokeStyle = '#c0b09a';
-    ctx.lineWidth = 1.8;
-    ctx.beginPath();
-    ctx.moveTo(0, 190); ctx.quadraticCurveTo(60, 80, 190, 55); ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(0, 245); ctx.quadraticCurveTo(80, 105, 240, 70); ctx.stroke();
-
-    // BUG FIX: quitar emojis del nombre ANTES de medir/dibujar en canvas,
-    // porque rompen measureText() y las letras quedan encimadas.
-    const nombre = stripEmoji(p.name || '').toUpperCase();
-    ctx.fillStyle = '#1a1814';
-    ctx.textAlign = 'left';
-    const TITLE_X = 48;
-    const maxTitleW = W - TITLE_X - 48;
-
-    const calcLines = (size) => {
-      ctx.font = 'bold ' + size + 'px Georgia, serif';
-      const words = nombre.split(' ');
-      let lines = [], cur = '';
-      for (const w of words) {
-        const test = cur + w + ' ';
-        if (ctx.measureText(test).width > maxTitleW && cur) { lines.push(cur.trim()); cur = w + ' '; }
-        else cur = test;
-      }
-      lines.push(cur.trim());
-      return lines;
-    };
-
-    let tSize = 90;
-    let titleLines = calcLines(tSize);
-    while (titleLines.length > 2 && tSize > 36) { tSize -= 4; titleLines = calcLines(tSize); }
-    if (titleLines.length > 2) {
-      titleLines = titleLines.slice(0, 2);
-      ctx.font = '900 ' + tSize + 'px Arial Black, sans-serif';
-      let l2 = titleLines[1];
-      while (ctx.measureText(l2 + '…').width > maxTitleW && l2.length > 1) l2 = l2.slice(0, -1);
-      titleLines[1] = l2 + '…';
-    }
-
-    ctx.font = '900 ' + tSize + 'px Arial Black, sans-serif';
-    let ty = 108;
-    for (const l of titleLines) { ctx.fillText(l, TITLE_X, ty); ty += tSize * 1.12; }
-
-    const imgX = 30, imgY = ty + 30;
-    const imgW = 610, imgH = H - imgY - 30;
-
-    ctx.save();
-    ctx.beginPath();
-    roundRect(ctx, imgX, imgY, imgW, imgH, 36);
-    ctx.clip();
-    ctx.fillStyle = '#f2ede8';
-    ctx.fillRect(imgX, imgY, imgW, imgH);
-    if (imgEl) {
-      const iw = imgEl.naturalWidth, ih = imgEl.naturalHeight;
-      const sc = Math.min(imgW / iw, imgH / ih);
-      const dw = iw * sc, dh = ih * sc;
-      ctx.drawImage(imgEl, imgX + (imgW - dw) / 2, imgY + (imgH - dh) / 2, dw, dh);
-    }
-    ctx.restore();
-
-    const colX = imgX + imgW + 36;
-    const colW = W - colX - 28;
-    ctx.textAlign = 'left';
-
-    // BUG FIX: quitar emojis de la descripción ANTES de medir/dibujar
-    const descClean = stripEmoji(p.description || '');
-    const descFrases = descClean
-      ? descClean.split(/[.,;]/).map(s => s.trim()).filter(Boolean)
-      : [nombre || ''];
-
-    const extraItems = [];
-    const skinArr = Array.isArray(p.skin)
-      ? p.skin.filter(s => s && s !== 'No aplica')
-      : (p.skin && p.skin !== 'No aplica' ? [p.skin] : []);
-    if (skinArr.length) extraItems.push(skinArr.join(', '));
-    const mlVal = String(p.mlVal || '').trim();
-    const mlUnit = String(p.mlUnit || '').trim();
-    if (mlVal && mlVal !== '0' && mlUnit && mlUnit !== 'N/A') extraItems.push(mlVal + ' ' + mlUnit);
-    if (p.isKorean) extraItems.push('🇰🇷 Coreano');
-    if (p.isMini) extraItems.push('🧴 Mini');
-
-    const hasMayoreo = p.priceMayoreo && p.priceMayoreo > 0;
-    const priceAreaH = (mode === 'ambos' && hasMayoreo) ? (70 * 2 + 10 + 28 + 20) : (90 + 28 + 20);
-    const maxTextY = H - priceAreaH;
-
-    const drawWrappedSafe = (text, x, startY, maxW, font, color, lineH) => {
-      ctx.font = font;
-      ctx.fillStyle = color;
-      const words = text.toUpperCase().split(' ');
-      let line = '', curY = startY;
-      for (let i = 0; i < words.length; i++) {
-        const w = words[i];
-        const test = line + w + ' ';
-        if (ctx.measureText(test).width > maxW && line) {
-          const nextY = curY + lineH;
-          if (nextY + lineH > maxTextY) {
-            let truncLine = line.trim();
-            while (ctx.measureText(truncLine + '…').width > maxW && truncLine.length > 1) truncLine = truncLine.slice(0, -1);
-            ctx.fillText(truncLine + '…', x, curY);
-            return { y: curY + lineH, clipped: true };
-          }
-          ctx.fillText(line.trim(), x, curY);
-          line = w + ' '; curY += lineH;
-        } else line = test;
-      }
-      if (curY > maxTextY) return { y: curY, clipped: true };
-      ctx.fillText(line.trim(), x, curY);
-      return { y: curY + lineH, clipped: false };
-    };
-
-    let dy = imgY + 36;
-    const descFont = '500 24px Arial, sans-serif';
-    const descLineH = 32;
-    const descGap = 20;
-
-    let descClipped = false;
-    for (const frase of descFrases) {
-      if (descClipped) break;
-      if (dy + descLineH > maxTextY) break;
-      const result = drawWrappedSafe('― ' + frase, colX, dy, colW, descFont, '#2a2820', descLineH);
-      dy = result.y + descGap;
-      if (result.clipped) descClipped = true;
-    }
-
-    let extrasShownAbove = false;
-    if (!descClipped) {
-      dy += 10;
-      const extraFont = '500 22px Arial, sans-serif';
-      const extraLineH = 30;
-      let allFit = true;
-      for (const extra of extraItems) {
-        if (dy + extraLineH > maxTextY) { allFit = false; break; }
-        const result = drawWrappedSafe(extra, colX, dy, colW, extraFont, '#7a7060', extraLineH);
-        dy = result.y + 14;
-        if (result.clipped) { allFit = false; break; }
-      }
-      extrasShownAbove = allFit;
-    }
-
-    const leftmostPillX = drawPriceArea(ctx, p, W, H, mode);
-
-    if (!extrasShownAbove && extraItems.length) {
-      const extraText = extraItems.filter(e => !e.includes('🇰🇷') && !e.includes('🧴')).join('  ·  ').toUpperCase();
-      if (extraText) {
-        ctx.font = '500 20px Arial, sans-serif';
-        ctx.fillStyle = '#7a7060';
-        ctx.textAlign = 'right';
-        const maxExtraW = leftmostPillX - colX - 16;
-        const pillBottomRef = H - (mode === 'ambos' && hasMayoreo ? 28 : 28);
-        const pillTopRef = H - (mode === 'ambos' && hasMayoreo ? (70*2+10+28) : (90+28));
-        const eWords = extraText.split(' ');
-        let eLine = '', eLines = [];
-        for (const w of eWords) {
-          const test = eLine + w + ' ';
-          if (ctx.measureText(test).width > maxExtraW && eLine) { eLines.push(eLine.trim()); eLine = w + ' '; } else eLine = test;
-        }
-        eLines.push(eLine.trim()); eLines = eLines.slice(0, 2);
-        const eLineH = 26;
-        const eTotalH = eLines.length * eLineH;
-        const eStartY = pillTopRef + (pillBottomRef - pillTopRef - eTotalH) / 2 + eLineH;
-        for (let i = 0; i < eLines.length; i++) ctx.fillText(eLines[i], leftmostPillX - 16, eStartY + i * eLineH);
-      }
-    }
-
-    canvas.toBlob(blob => {
-      const fname = (p.name || 'producto').replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g, '').trim().replace(/ +/g, '_');
-      canvas.width = 1; canvas.height = 1;
-      res({ fname: fname + '.jpg', blob });
-    }, 'image/jpeg', 0.92);
   });
 
   const zip = new JSZip();
