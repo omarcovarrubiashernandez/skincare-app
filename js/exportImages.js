@@ -319,6 +319,13 @@ window.exportImages = async function(priceMode = 'menudeo') {
   const zip = new (window.JSZip)();
   let count = 0;
   let failed = 0;
+  let firstError = null;
+
+  if (typeof window.html2canvas !== 'function') {
+    toast('Error: html2canvas no está cargado en la página (revisa el <script> que lo incluye)', 'err');
+    console.error('window.html2canvas no es una función. Valor actual:', window.html2canvas);
+    return;
+  }
 
   await loadImagesLimited(prods, async (p) => {
     try {
@@ -328,12 +335,19 @@ window.exportImages = async function(priceMode = 'menudeo') {
       toast(`Procesando... ${count}/${prods.length}`);
     } catch (e) {
       failed++;
-      console.error(`No se pudo generar la imagen de "${p.name}":`, e);
+      if (!firstError) firstError = { name: p.name, image: p.image, message: e && e.message };
+      console.error(`No se pudo generar la imagen de "${p.name}" (URL original: ${p.image}):`, e);
       toast(`Procesando... ${count}/${prods.length}`);
     }
   }, 4);
 
-  if (failed) toast(`${failed} producto(s) se saltaron por error o timeout`, 'err');
+  if (failed) {
+    const detail = firstError ? ` — primer error: "${firstError.message}" (producto: ${firstError.name})` : '';
+    toast(`${failed} producto(s) se saltaron por error o timeout${detail}`, 'err');
+    console.error('Resumen de fallos. Primer error completo:', firstError);
+  }
+
+  if (count === 0) return; // no generamos ZIP vacío
 
   const zipBlob = await zip.generateAsync({ type: 'blob' });
   const modeLabel = priceMode === 'ambos' ? 'ambos-precios' : priceMode;
@@ -472,7 +486,7 @@ const TEMPLATE_CSS = `
 .pink-cta .ic{ font-size:20px; }
 
 .pink-strip{ position:relative; z-index:3; margin-top:0; padding:18px 46px; display:flex; align-items:center; justify-content:space-around;
-  gap:8px; background:linear-gradient(90deg,#E7DDD0,#F3EEE6,#E5D8C9); border-top:1px solid rgba(104,112,90,.13); flex-wrap:wrap; }
+  gap:8px; background:linear-gradient(90deg,#E7DDD0 0%,#F3EEE6 50%,#E5D8C9 100%); border-top:1px solid rgba(104,112,90,.13); flex-wrap:wrap; }
 .pink-strip-item{ flex:1; min-width:120px; display:flex; align-items:center; justify-content:center; gap:8px; padding:4px 10px;
   font-size:11px; font-weight:800; line-height:1.25; text-align:center; color:var(--olive-dark); text-transform:uppercase; }
 .pink-strip-item:not(:last-child){ border-right:1px solid rgba(104,112,90,.18); }
