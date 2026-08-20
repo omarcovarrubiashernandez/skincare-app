@@ -23,6 +23,14 @@ const TEMPLATES = {
   vintage: { label: 'Café / Vintage (nude)', accent: '#6F4E37' }
 };
 
+// Fondo real de cada plantilla, usado como respaldo en la captura del
+// canvas para que nunca aparezcan franjas negras (ver makeCardBlob).
+const TEMPLATE_BG = {
+  rosa: '#FDF1F5',
+  olivo: '#F6F2E7',
+  vintage: '#EFE6D8'
+};
+
 // ──────────────────────────────────────────
 // 2. FUENTES E INYECCIÓN DE ESTILOS (una sola vez)
 // ──────────────────────────────────────────
@@ -62,9 +70,18 @@ function ensureStage() {
   if (!stage) {
     stage = document.createElement('div');
     stage.id = '_cardStage';
+    // Antes usaba left:-99999px, lo cual hacía que html2canvas a veces
+    // calculara mal el alto real de la tarjeta (por el offset tan extremo)
+    // y dejara una franja transparente de más -> que al guardar en JPG
+    // (sin canal alfa) se pintaba de negro. Con width/height:0 + overflow
+    // hidden, la tarjeta queda invisible en la página pero en coordenadas
+    // normales (0,0), así html2canvas la mide correctamente.
     stage.style.position = 'fixed';
-    stage.style.left = '-99999px';
+    stage.style.left = '0';
     stage.style.top = '0';
+    stage.style.width = '0';
+    stage.style.height = '0';
+    stage.style.overflow = 'hidden';
     stage.style.zIndex = '-1';
     document.body.appendChild(stage);
   }
@@ -157,16 +174,18 @@ function buildPriceHTML(p, mode, template) {
   if (template === 'vintage') {
     if (showAmbos) {
       return `
-        <div class="vint-price-panel vint-price-double">
+        <div class="vint-price-double">
           <div class="vint-price-row"><span>Menudeo</span><b>${fmtMoney(p.price)}</b></div>
           <div class="vint-price-row alt"><span>Mayoreo</span><b>${fmtMoney(p.priceMayoreo)}</b></div>
         </div>`;
     }
     const val = isMay ? p.priceMayoreo : p.price;
     return `
-      <div class="vint-price-panel">
-        <div class="vint-price-value">${fmtMoney(val)}</div>
-        <div class="vint-price-unit">${isMay ? 'MAYOREO' : 'PRECIO'}</div>
+      <div class="vint-price-medallion">
+        <div class="vint-price-medallion-inner">
+          <div class="vint-price-unit">${isMay ? 'MAYOREO' : 'PRECIO'}</div>
+          <div class="vint-price-value">${fmtMoney(val)}</div>
+        </div>
       </div>`;
   }
 
@@ -239,21 +258,23 @@ function buildCardHTML(p, mode, template, imgUrl) {
   if (template === 'vintage') {
     return `
     <div class="vint-frame"></div>
+    <div class="vint-frame-inner"></div>
     <div class="vint-header">
-      <div class="vint-stamp">Aplo<br>Blossom</div>
+      <div class="vint-stamp"><span>Aplo<br>Blossom</span></div>
       <div class="vint-brandblock">
         <div class="vint-brand">${nombre}</div>
         ${subtitle ? `<div class="vint-sub">${subtitle}</div>` : ''}
+        <div class="vint-brand-rule"><span>❦</span></div>
       </div>
     </div>
     <div class="vint-body">
       <div class="vint-photo-frame">
         <div class="vint-photo-mat"></div>
         <div class="vint-photo-mask"><img src="${imgUrl}" crossorigin="anonymous"></div>
-        <div class="vint-corner tl"></div>
-        <div class="vint-corner tr"></div>
-        <div class="vint-corner bl"></div>
-        <div class="vint-corner br"></div>
+        <div class="vint-corner tl"><span>✦</span></div>
+        <div class="vint-corner tr"><span>✦</span></div>
+        <div class="vint-corner bl"><span>✦</span></div>
+        <div class="vint-corner br"><span>✦</span></div>
       </div>
       <div class="vint-features">
         ${features.map((f, i) => `
@@ -264,6 +285,7 @@ function buildCardHTML(p, mode, template, imgUrl) {
         </div>`).join('')}
       </div>
     </div>
+    <div class="vint-scallop"></div>
     <div class="vint-footer">
       <div class="vint-tags">
         ${chips.map(c => `<div class="vint-tag"><span class="ic">${icon(c.icon)}</span>${esc(c.label).toUpperCase()}</div>`).join('')}
@@ -326,26 +348,61 @@ function rgbToHueSat(r, g, b) {
   return { h, s };
 }
 
-function detectTemplateFromImage(imgEl) {
+// Reparte de forma consistente entre las 3 plantillas cuando la foto no
+// tiene un color dominante claro (producto blanco, plateado, transparente,
+// etc). Antes esos casos siempre caían en 'vintage', por eso casi todo
+// salía café. Usamos el id/nombre del producto como semilla para que el
+// mismo producto SIEMPRE saque la misma plantilla (consistencia entre
+// exportaciones), pero productos distintos se repartan entre las 3.
+function fallbackTemplateForProduct(product) {
+  const key = String((product && (product.id || product.name)) || Math.random());
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+  const options = ['rosa', 'olivo', 'vintage'];
+  return options[hash % options.length];
+}
+
+function detectTemplateFromImage(imgEl, product) {
   try {
-    const size = 24;
+    const size = 40;
     const c = document.createElement('canvas');
     c.width = size; c.height = size;
     const ctx = c.getContext('2d');
     ctx.drawImage(imgEl, 0, 0, size, size);
     const data = ctx.getImageData(0, 0, size, size).data;
-    let r = 0, g = 0, b = 0, n = 0;
+
+    // Antes promediábamos TODOS los pixeles, incluyendo el fondo blanco/gris
+    // del estudio -> eso "diluía" el color real del producto y casi siempre
+    // terminaba cayendo en la categoría comodín (vintage/café).
+    // Ahora ignoramos pixeles casi blancos, casi negros, o grises sin color
+    // (fondo, sombras) y solo promediamos los pixeles que sí tienen color
+    // real (el empaque del producto), ponderando más los tonos más vivos.
+    let sumH = 0, sumS = 0, weight = 0;
     for (let i = 0; i < data.length; i += 4) {
-      r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const max = Math.max(r, g, b), min = Math.min(r, g, b);
+      const chroma = (max - min) / 255;
+      const brightness = max / 255;
+      if (brightness > 0.94 || brightness < 0.08 || chroma < 0.12) continue;
+      const { h, s } = rgbToHueSat(r, g, b);
+      sumH += h * s;
+      sumS += s;
+      weight++;
     }
-    r /= n; g /= n; b /= n;
-    const { h, s } = rgbToHueSat(r, g, b);
-    if (s < 0.12) return 'vintage';
-    if (h >= 55 && h <= 170) return 'olivo';
-    if ((h >= 320 || h <= 20) && s >= 0.25) return 'rosa';
-    return 'vintage';
+
+    if (weight < 6 || sumS < 0.5) {
+      // Casi no hubo pixeles con color real -> producto blanco/plateado/neutro
+      return fallbackTemplateForProduct(product);
+    }
+
+    const h = sumH / sumS;
+    const sAvg = sumS / weight;
+
+    if (h >= 60 && h <= 175) return 'olivo';                    // verdes / botánico
+    if ((h >= 295 || h <= 25) && sAvg >= 0.15) return 'rosa';    // rosas, rojos, corales
+    return 'vintage';                                           // azules, morados, ámbar/café
   } catch (e) {
-    return 'vintage';
+    return fallbackTemplateForProduct(product);
   }
 }
 
@@ -360,11 +417,11 @@ function loadImageForDetection(imgUrl) {
   });
 }
 
-async function resolveTemplate(templateMode, imgUrl) {
+async function resolveTemplate(templateMode, imgUrl, product) {
   if (templateMode !== 'auto') return templateMode;
   const imgEl = await loadImageForDetection(imgUrl);
-  if (!imgEl) return 'vintage';
-  return detectTemplateFromImage(imgEl);
+  if (!imgEl) return fallbackTemplateForProduct(product);
+  return detectTemplateFromImage(imgEl, product);
 }
 
 // ──────────────────────────────────────────
@@ -386,11 +443,18 @@ async function makeCardBlob(p, mode, template, imgUrl) {
   });
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
+  // Antes backgroundColor era null (transparente). Como se exporta a JPG
+  // (que no tiene canal alfa), cualquier zona transparente terminaba
+  // pintada de NEGRO por el navegador. Ahora usamos el color de fondo real
+  // de cada plantilla como respaldo, así aunque quede algún pixel de más
+  // por redondeo, se ve del color correcto en vez de una franja negra.
   const canvas = await window.html2canvas(card, {
     scale: 2,
-    backgroundColor: null,
+    backgroundColor: TEMPLATE_BG[template] || '#ffffff',
     useCORS: true,
+    width: card.scrollWidth,
     height: card.scrollHeight,
+    windowWidth: card.scrollWidth,
     windowHeight: card.scrollHeight
   });
 
@@ -424,7 +488,7 @@ window.exportImages = async function(priceMode = 'menudeo', templateMode = 'auto
   await loadImagesLimited(prods, async (p) => {
     try {
       const imgUrl = proxiedUrl(p.image);
-      const template = await resolveTemplate(templateMode, imgUrl);
+      const template = await resolveTemplate(templateMode, imgUrl, p);
       const result = await makeCardBlob(p, priceMode, template, imgUrl);
       if (result) { zip.file(result.fname, result.blob); count++; }
       toast(`Procesando... ${count}/${prods.length}`);
@@ -566,37 +630,63 @@ const TEMPLATE_CSS = `
 .olive-price-row.alt{ opacity:.85; }
 
 /* ---------- CAFÉ / VINTAGE ---------- */
-.tpl-vintage{ background:#EFE6D8; position:relative; overflow:hidden; border-radius:6px; font-family:'Nunito', sans-serif; color:#3E2F23; }
-.vint-frame{ position:absolute; inset:20px; border:1px dashed #C7B393; border-radius:2px; }
-.vint-header{ position:relative; padding:56px 60px 0 60px; display:flex; align-items:flex-start; gap:24px; }
-.vint-stamp{ flex:0 0 118px; height:118px; border:2px solid #6F4E37; border-radius:50%; display:flex; align-items:center; justify-content:center; text-align:center; font-family:'Special Elite', monospace; font-size:14px; line-height:1.3; color:#6F4E37; transform:rotate(-8deg); background:#F7F1E6; }
-.vint-brandblock{ padding-top:10px; }
-.vint-brand{ font-family:'Cormorant Garamond', serif; font-weight:600; font-size:50px; letter-spacing:.01em; line-height:1.05; }
+.tpl-vintage{ background:#EFE6D8; position:relative; overflow:hidden; border-radius:6px; font-family:'Nunito', sans-serif; color:#3E2F23;
+  border:9px solid #EFE6D8; box-shadow:inset 0 0 0 1.5px #C7B393; }
+/* Marco doble: uno sólido pegado al borde (arriba, vía box-shadow) y uno
+   punteado más adentro -> look de tarjeta postal antigua. */
+.vint-frame{ position:absolute; inset:16px; border:1px dashed #C7B393; border-radius:2px; }
+.vint-frame-inner{ position:absolute; inset:20px; border:1px solid rgba(184,134,11,.35); border-radius:2px; }
+.vint-header{ position:relative; padding:52px 58px 0 58px; display:flex; align-items:flex-start; gap:24px; }
+.vint-stamp{ flex:0 0 118px; height:118px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  transform:rotate(-8deg); background:#F7F1E6;
+  box-shadow: 0 0 0 2px #6F4E37, 0 0 0 6px #F7F1E6, 0 0 0 7px #B8860B; }
+.vint-stamp span{ text-align:center; font-family:'Special Elite', monospace; font-size:14px; line-height:1.3; color:#6F4E37; }
+.vint-brandblock{ padding-top:8px; }
+.vint-brand{ font-family:'Cormorant Garamond', serif; font-weight:600; font-size:50px; letter-spacing:.015em; line-height:1.05; }
 .vint-sub{ font-family:'Special Elite', monospace; font-size:16px; letter-spacing:.08em; text-transform:uppercase; color:#A9906F; margin-top:10px; }
-.vint-body{ position:relative; display:flex; align-items:center; gap:24px; padding:34px 55px 0 55px; }
+.vint-brand-rule{ display:flex; align-items:center; gap:10px; margin-top:14px; }
+.vint-brand-rule::before, .vint-brand-rule::after{ content:""; flex:1; height:1px;
+  background:linear-gradient(to right, transparent, #B8860B); }
+.vint-brand-rule::after{ background:linear-gradient(to left, transparent, #B8860B); }
+.vint-brand-rule span{ font-size:15px; color:#B8860B; }
+.vint-body{ position:relative; display:flex; align-items:center; gap:24px; padding:26px 53px 0 53px; }
 .vint-photo-frame{ flex:0 0 400px; height:520px; position:relative; }
-.vint-photo-mat{ position:absolute; inset:0; background:#F7F1E6; border-radius:4px; box-shadow:0 18px 30px rgba(62,47,35,.14); }
+.vint-photo-mat{ position:absolute; inset:0; background:#F7F1E6; border-radius:4px; box-shadow:0 18px 30px rgba(62,47,35,.16), inset 0 0 0 1px rgba(184,134,11,.25); }
 .vint-photo-mask{ position:absolute; inset:14px; overflow:hidden; }
-.vint-photo-mask img{ width:100%; height:100%; object-fit:cover; object-position:center; filter:sepia(.12); }
-.vint-corner{ position:absolute; width:22px; height:22px; border-color:#6F4E37; }
-.vint-corner.tl{ top:6px; left:6px; border-top:2px solid; border-left:2px solid; }
-.vint-corner.tr{ top:6px; right:6px; border-top:2px solid; border-right:2px solid; }
-.vint-corner.bl{ bottom:6px; left:6px; border-bottom:2px solid; border-left:2px solid; }
-.vint-corner.br{ bottom:6px; right:6px; border-bottom:2px solid; border-right:2px solid; }
+.vint-photo-mask img{ width:100%; height:100%; object-fit:cover; object-position:center; filter:sepia(.14) saturate(1.05); }
+.vint-corner{ position:absolute; width:24px; height:24px; border-color:#B8860B; }
+.vint-corner span{ position:absolute; font-size:11px; color:#B8860B; }
+.vint-corner.tl{ top:5px; left:5px; border-top:2px solid; border-left:2px solid; }
+.vint-corner.tl span{ top:-3px; left:-3px; }
+.vint-corner.tr{ top:5px; right:5px; border-top:2px solid; border-right:2px solid; }
+.vint-corner.tr span{ top:-3px; right:-3px; }
+.vint-corner.bl{ bottom:5px; left:5px; border-bottom:2px solid; border-left:2px solid; }
+.vint-corner.bl span{ bottom:-3px; left:-3px; }
+.vint-corner.br{ bottom:5px; right:5px; border-bottom:2px solid; border-right:2px solid; }
+.vint-corner.br span{ bottom:-3px; right:-3px; }
 .vint-features{ flex:1; display:flex; flex-direction:column; }
-.vint-feat{ display:flex; align-items:center; gap:16px; padding:19px 0; }
-.vint-feat-icon{ flex:0 0 50px; height:50px; border-radius:50%; background:#E4D5BB; display:flex; align-items:center; justify-content:center; color:#6F4E37; }
+.vint-feat{ display:flex; align-items:center; gap:16px; padding:17px 0; }
+.vint-feat-icon{ flex:0 0 50px; height:50px; border-radius:50%; background:#E4D5BB; display:flex; align-items:center; justify-content:center; color:#6F4E37;
+  box-shadow:inset 0 0 0 1px rgba(184,134,11,.3); }
 .vint-feat-icon .ic{ font-size:24px; }
 .vint-feat-desc{ font-family:'Nunito',sans-serif; font-weight:700; font-size:16px; line-height:1.4; }
 .vint-divider{ border:none; border-top:1px dashed #C7B393; margin:0; }
-.vint-footer{ position:relative; margin-top:34px; padding:0 55px 46px 55px; display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap; }
+.vint-scallop{ position:relative; height:12px; margin:26px 53px 0 53px;
+  background-image:linear-gradient(135deg, #C7B393 25%, transparent 25%), linear-gradient(225deg, #C7B393 25%, transparent 25%);
+  background-position:0 0; background-size:12px 12px; background-repeat:repeat-x; opacity:.55; }
+.vint-footer{ position:relative; margin-top:22px; padding:0 53px 42px 53px; display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap; }
 .vint-tags{ display:flex; gap:20px; flex-wrap:wrap; }
 .vint-tag{ font-family:'Special Elite', monospace; font-weight:400; font-size:12px; letter-spacing:.05em; color:#6F4E37; display:flex; align-items:center; gap:9px; }
 .vint-tag .ic{ color:#6F4E37; font-size:20px; }
-.vint-price-panel{ background:#6F4E37; color:#F7F1E6; border-radius:4px; padding:18px 32px; text-align:center; box-shadow:0 18px 26px rgba(62,47,35,.24); }
-.vint-price-value{ font-family:'Cormorant Garamond', serif; font-weight:600; font-size:42px; line-height:1; }
-.vint-price-unit{ font-family:'Special Elite', monospace; font-size:11px; letter-spacing:.14em; opacity:.8; margin-top:6px; }
-.vint-price-double{ display:flex; flex-direction:column; gap:10px; padding:16px 28px; }
+.vint-price-medallion{ width:132px; height:132px; border-radius:50%; background:#6F4E37; display:flex; align-items:center; justify-content:center;
+  box-shadow:0 18px 26px rgba(62,47,35,.28), 0 0 0 3px #EFE6D8, 0 0 0 4px #B8860B; }
+.vint-price-medallion-inner{ width:108px; height:108px; border-radius:50%; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  border:1px dashed rgba(247,241,230,.5); color:#F7F1E6; text-align:center; }
+.vint-price-value{ font-family:'Cormorant Garamond', serif; font-weight:600; font-size:34px; line-height:1; }
+.vint-price-unit{ font-family:'Special Elite', monospace; font-size:10px; letter-spacing:.12em; opacity:.85; margin-bottom:4px; }
+.vint-price-double{ background:#6F4E37; color:#F7F1E6; border-radius:4px; padding:16px 28px; text-align:center;
+  box-shadow:0 18px 26px rgba(62,47,35,.24), 0 0 0 3px #EFE6D8, 0 0 0 4px rgba(184,134,11,.6);
+  display:flex; flex-direction:column; gap:10px; }
 .vint-price-row{ display:flex; justify-content:space-between; gap:20px; font-family:'Nunito',sans-serif; }
 .vint-price-row span{ font-size:11px; letter-spacing:.1em; opacity:.8; align-self:center; font-family:'Special Elite',monospace; }
 .vint-price-row b{ font-family:'Cormorant Garamond',serif; font-size:22px; }
