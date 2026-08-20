@@ -9,17 +9,23 @@
 // window.exportImages y window.openExportImagesModal, que es lo que
 // usa el botón de la pantalla de Catálogo)
 //
-// ── CAMBIOS EN ESTA VERSIÓN (plantilla ROSA rediseñada) ──
-// La plantilla rosa se rediseñó por completo:
-//  - Layout de 2 columnas (foto | contenido) con altura igualada por
-//    flexbox (align-items:stretch), así la foto SIEMPRE llena su
-//    columna completa sin dejar espacio en blanco a los lados/abajo.
-//  - Se quitaron los círculos decorativos que tapaban el título y el
-//    precio (ahora van detrás, con z-index:0, y el contenido real
-//    nunca usa posiciones negativas que provocaban el "corte" arriba).
-//  - Precio con acento tipo "trazo de pincel" en vez del blob simple.
-//  - Cada característica ahora tiene un título corto en negritas +
-//    una descripción, como en la referencia.
+// ── CAMBIOS EN ESTA VERSIÓN (plantilla "rosa" → OLIVO & NUDE) ──
+// La plantilla que antes era rosa se rediseñó por completo tomando
+// como base un mockup más elaborado, pero pasando toda la paleta a
+// verde oliva + beige/nude (ya NO es rosa):
+//  - Layout de 2 columnas (foto | contenido), foto grande con marco
+//    redondeado, ligera rotación y una mancha decorativa detrás.
+//  - Badge tipo "sello" superpuesto en la esquina de la foto.
+//  - Features con ícono circular grande + título en mayúsculas +
+//    descripción corta, separados por líneas punteadas.
+//  - Precio con acento tipo "trazo de pincel" orgánico (border-radius,
+//    NO clip-path — html2canvas no soporta bien clip-path, así que se
+//    usa el mismo truco de siempre para que la forma sí se capture).
+//  - Se agregó soporte de paleta para el modo "Menudeo + Mayoreo"
+//    (pink-price-stack / pink-price-blob) que el diseño de referencia
+//    no traía.
+//  - Las clases se mantienen con el prefijo "pink-" (para no romper
+//    nada que ya las use), pero visualmente es 100% oliva/beige/nude.
 // ══════════════════════════════════════════════════════════════════
 
 import { state } from './state.js';
@@ -30,7 +36,7 @@ import { showDownloadModal, loadImagesLimited } from './catalogo.js';
 // 1. PLANTILLAS DISPONIBLES
 // ──────────────────────────────────────────
 const TEMPLATES = {
-  rosa: { label: 'Baby / Skincare (rosa)', accent: '#E24E86' },
+  rosa: { label: 'Olivo & Nude (elegante)', accent: '#68705A' },
   olivo: { label: 'Botánico (verde)', accent: '#3E4A2C' },
   vintage: { label: 'Café / Vintage (nude)', accent: '#6F4E37' }
 };
@@ -38,7 +44,7 @@ const TEMPLATES = {
 // Fondo real de cada plantilla, usado como respaldo en la captura del
 // canvas para que nunca aparezcan franjas negras (ver makeCardBlob).
 const TEMPLATE_BG = {
-  rosa: '#FDF1F5',
+  rosa: '#F8F5EF',
   olivo: '#F6F2E7',
   vintage: '#EFE6D8'
 };
@@ -214,17 +220,20 @@ function buildPriceHTML(p, mode, template) {
       </div>`;
   }
 
-  // ── ROSA ── (rediseñado: acento tipo "trazo de pincel" detrás del número)
+  // ── ROSA → OLIVO & NUDE ──
+  // Acento tipo "trazo de pincel" hecho con border-radius orgánico +
+  // rotate (NO clip-path: html2canvas no lo soporta de forma confiable
+  // y la forma se perdería o se vería como un rectángulo en el export).
   if (showAmbos) {
     return `
       <div class="pink-price-stack">
-        <div class="pink-price-blob small">
+        <div class="pink-price-blob">
           <div class="pink-price-label">MENUDEO</div>
-          <div class="pink-price-value small">${fmtMoney(p.price)}</div>
+          <div class="pink-price-value">${fmtMoney(p.price)}</div>
         </div>
-        <div class="pink-price-blob small alt">
+        <div class="pink-price-blob alt">
           <div class="pink-price-label">MAYOREO</div>
-          <div class="pink-price-value small">${fmtMoney(p.priceMayoreo)}</div>
+          <div class="pink-price-value">${fmtMoney(p.priceMayoreo)}</div>
         </div>
       </div>`;
   }
@@ -321,11 +330,11 @@ function buildCardHTML(p, mode, template, imgUrl) {
     </div>`;
   }
 
-  // ── ROSA ── (rediseñado)
-  // 2 columnas con altura igualada por flexbox: la col. de la foto no
-  // tiene contenido propio con altura (solo un div position:absolute),
-  // así que "estira" exactamente hasta la altura que define la columna
-  // de contenido -> la foto siempre llena su espacio, sin huecos.
+  // ── ROSA → OLIVO & NUDE ──
+  // Misma estructura de siempre (2 columnas, foto | contenido) — solo
+  // cambió el CSS. La columna de la foto no tiene contenido con altura
+  // propia (el <img> vive dentro de un frame con altura fija de 570px
+  // más una mancha decorativa detrás), así que sigue sin dejar huecos.
   return `
     <div class="pink-main">
       <div class="pink-photo-col">
@@ -435,7 +444,7 @@ function detectTemplateFromImage(imgEl, product) {
     const sAvg = sumS / weight;
 
     if (h >= 60 && h <= 175) return 'olivo';                    // verdes / botánico
-    if ((h >= 295 || h <= 25) && sAvg >= 0.15) return 'rosa';    // rosas, rojos, corales
+    if ((h >= 295 || h <= 25) && sAvg >= 0.15) return 'rosa';    // rosas, rojos, corales → plantilla olivo/nude
     return 'vintage';                                           // azules, morados, ámbar/café
   } catch (e) {
     return fallbackTemplateForProduct(product);
@@ -488,13 +497,15 @@ async function makeCardBlob(p, mode, template, imgUrl) {
   // tarjeta. El problema es que scrollWidth/scrollHeight SÍ cuentan el
   // contenido que se desborda aunque el elemento tenga overflow:hidden
   // (solo evitan la barra de scroll, no lo excluyen de la medición).
-  // Como las manchas decorativas de la plantilla rosa usan offsets
-  // negativos grandes (ej. top:-130px, width:420px), eso inflaba el
+  // Como las manchas decorativas de la plantilla olivo/nude usan offsets
+  // negativos grandes (ej. left:-70px, width:360px), eso inflaba el
   // tamaño "real" de la tarjeta mucho más allá de lo que se ve, y
   // html2canvas terminaba capturando un lienzo gigante -> todo el
   // espacio de más quedaba pintado con el color de fondo (por eso el
   // borde/espacio en blanco enorme y la foto se veía "comprimida").
-  // offsetWidth/offsetHeight sí respetan el recorte visual real.
+  // offsetWidth/offsetHeight sí respetan el recorte visual real (el
+  // .tpl-rosa tiene overflow:hidden, así que cualquier decoración con
+  // offset negativo queda recortada por fuera de la medición).
   const cardW = card.offsetWidth;
   const cardH = card.offsetHeight;
 
@@ -570,7 +581,7 @@ window.openExportImagesModal = function() {
 
     <div style="font-size:13px;color:var(--text-light);margin-bottom:10px;">1. Elige el diseño de la imagen.</div>
     <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px;">
-      ${opt('auto', 'Automático (recomendado)', 'Elige rosa, olivo o café según los colores de cada foto')}
+      ${opt('auto', 'Automático (recomendado)', 'Elige olivo/nude, botánico o café según los colores de cada foto')}
       ${opt('rosa', TEMPLATES.rosa.label, 'Forzar esta plantilla para todo el lote')}
       ${opt('olivo', TEMPLATES.olivo.label, 'Forzar esta plantilla para todo el lote')}
       ${opt('vintage', TEMPLATES.vintage.label, 'Forzar esta plantilla para todo el lote')}
@@ -605,73 +616,115 @@ const TEMPLATE_CSS = `
 .tpl-card{ width:900px; box-sizing:border-box; }
 .tpl-card *{ box-sizing:border-box; }
 
-/* ---------- ROSA (rediseñada) ---------- */
+/* ---------- ROSA → OLIVO & NUDE (rediseñada) ---------- */
 .tpl-rosa{
-  /* El toque rosado ahora es parte del background-image de la propia
-     tarjeta (sin divs extra posicionados con offsets negativos). Esto
-     evita por completo el bug que inflaba el tamaño exportado y dejaba
-     franjas en blanco a la derecha/abajo. */
-  background:
-    radial-gradient(circle at 100% 0%, #FBD9E6 0%, transparent 34%),
-    radial-gradient(circle at 0% 100%, #FCE6EE 0%, transparent 30%),
-    #FFFFFF;
+  --olive:#68705A;
+  --olive-dark:#30352C;
+  --olive-soft:#AEB4A1;
+  --beige:#E8DDCE;
+  --nude:#D9C4AE;
+  --cream:#F8F5EF;
+  --cream-2:#F1ECE3;
+  --text:#30322D;
+  --muted:#77756E;
+
   position:relative; overflow:hidden; border-radius:10px;
-  font-family:'Nunito', sans-serif; color:#241F26;
+  font-family:'Nunito', sans-serif; color:var(--text);
+
+  background:
+    radial-gradient(circle at 5% 10%, rgba(217,196,174,.55) 0, rgba(217,196,174,.20) 20%, transparent 42%),
+    radial-gradient(circle at 90% 8%, rgba(174,180,161,.35) 0, transparent 32%),
+    radial-gradient(circle at 20% 90%, rgba(232,221,206,.75) 0, transparent 35%),
+    var(--cream);
 }
 
-/* Fila principal: foto | contenido. align-items:stretch (default de
-   flex) hace que la columna de la foto siempre iguale la altura real
-   de la columna de contenido -> ya no queda espacio en blanco abajo
-   ni a los lados, y la foto llena TODO su espacio. */
-.pink-main{ position:relative; z-index:1; display:flex; gap:30px; padding:46px 46px 0 46px; }
+/* textura sutil, casi imperceptible */
+.tpl-rosa::before{
+  content:""; position:absolute; inset:0; opacity:.35; pointer-events:none;
+  background-image: linear-gradient(115deg, transparent 49.5%, rgba(48,53,44,.018) 50%, transparent 50.5%);
+  background-size:8px 8px;
+}
 
-.pink-photo-col{ flex:0 0 400px; position:relative; }
-.pink-photo-frame{ position:absolute; inset:0; border-radius:26px; overflow:hidden; background:#fff;
-  box-shadow:0 26px 50px rgba(178,47,99,.20), 0 4px 10px rgba(0,0,0,.04); }
-.pink-photo-frame img{ width:100%; height:100%; object-fit:cover; object-position:center; }
-.pink-photo-shade{ position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,0) 62%, rgba(178,47,99,.22) 100%); }
-.pink-badge{ position:absolute; top:18px; left:18px; z-index:2; background:#fff; border:2px solid #FBD9E6; color:#B22F63;
-  font-family:'Caveat', cursive; font-weight:700; font-size:24px; line-height:1.12; padding:12px 16px; border-radius:18px;
-  transform:rotate(-6deg); box-shadow:0 10px 18px rgba(178,47,99,.18); max-width:150px; text-align:center; }
-.pink-badge .ic{ font-size:18px; vertical-align:-2px; }
+/* Fila principal: foto | contenido. */
+.pink-main{ position:relative; z-index:2; display:flex; gap:38px; padding:44px 46px 0; }
 
-.pink-content-col{ flex:1; display:flex; flex-direction:column; padding-bottom:46px; min-width:0; }
-.pink-brand{ font-family:'Fredoka', sans-serif; font-weight:700; font-size:42px; letter-spacing:-.5px; line-height:1.06; }
-.pink-sub-pill{ display:inline-block; align-self:flex-start; margin-top:14px; background:linear-gradient(135deg,#F5A9C4,#E24E86);
-  color:#fff; font-family:'Fredoka', sans-serif; font-weight:600; font-size:17px; padding:8px 20px; border-radius:999px; letter-spacing:.02em; }
+.pink-photo-col{ flex:0 0 380px; position:relative; min-height:620px; display:flex; align-items:center; }
 
-.pink-features{ margin-top:28px; display:flex; flex-direction:column; gap:20px; }
-.pink-feat{ display:flex; align-items:flex-start; gap:16px; }
-.pink-feat-icon{ flex:0 0 50px; height:50px; border-radius:50%; background:#FBD9E6; display:flex; align-items:center; justify-content:center; color:#B22F63; font-size:22px; }
-.pink-feat-body{ padding-top:3px; }
-.pink-feat-title{ font-family:'Fredoka',sans-serif; font-weight:700; font-size:16px; color:#B22F63; text-transform:uppercase; letter-spacing:.015em; line-height:1.25; }
-.pink-feat-desc{ font-family:'Nunito',sans-serif; font-weight:600; font-size:14.5px; color:#4b4550; line-height:1.4; margin-top:3px; }
+/* mancha decorativa grande detrás de la foto */
+.pink-photo-col::before{
+  content:""; position:absolute; width:340px; height:440px; left:-60px; top:60px; pointer-events:none;
+  background:radial-gradient(ellipse, rgba(217,196,174,.62), rgba(232,221,206,.20) 65%, transparent 72%);
+  transform:rotate(-18deg);
+}
+/* circulo punteado decorativo */
+.pink-photo-col::after{
+  content:""; position:absolute; width:110px; height:110px; border:2px dashed rgba(104,112,90,.25);
+  border-radius:50%; bottom:25px; left:-10px; pointer-events:none;
+}
 
-/* margin-top:auto empuja precio + botón hasta el fondo de la columna,
-   así siempre queda alineado con la parte baja de la foto. */
-.pink-bottom{ margin-top:auto; padding-top:26px; display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
+.pink-photo-frame{ position:relative; width:100%; height:540px; overflow:hidden; border-radius:28px; background:#fff;
+  box-shadow:0 28px 54px rgba(48,53,44,.15), 0 8px 18px rgba(48,53,44,.06); transform:rotate(-2deg); }
+.pink-photo-frame img{ width:100%; height:100%; display:block; object-fit:cover; object-position:center; }
+.pink-photo-shade{ position:absolute; inset:0; background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(48,53,44,.10)); }
 
-.pink-price-wrap{ position:relative; display:inline-flex; flex-direction:column; padding:12px 30px 12px 8px; }
-.pink-price-brush{ position:absolute; left:-16px; right:-8px; top:2px; bottom:2px; z-index:0; opacity:.85;
-  background:linear-gradient(100deg,#F7C6D9,#F3A9C6); border-radius:42% 58% 55% 45% / 50% 45% 55% 50%; transform:rotate(-3deg); }
+.pink-badge{ position:absolute; z-index:4; top:-6px; left:-4px; max-width:150px; text-align:center; padding:15px 18px;
+  border-radius:28px 30px 25px 34px; background:linear-gradient(135deg,#F5EEE5,#E4D5C4); color:var(--olive-dark);
+  font-family:'Caveat',cursive; font-size:23px; font-weight:700; line-height:1.05; transform:rotate(-7deg);
+  box-shadow:0 12px 22px rgba(48,53,44,.10); }
+.pink-badge .ic{ color:var(--olive); }
+
+.pink-content-col{ flex:1; min-width:0; display:flex; flex-direction:column; padding-bottom:40px; }
+
+.pink-brand{ font-family:'Fredoka',sans-serif; font-size:44px; line-height:1.02; font-weight:700; letter-spacing:.3px;
+  color:var(--olive-dark); text-transform:uppercase; }
+
+.pink-sub-pill{ display:inline-block; align-self:flex-start; margin-top:14px; padding:8px 20px; border-radius:999px;
+  text-align:center; background:linear-gradient(90deg,var(--nude),#D6BDA4); color:#fff; font-family:'Fredoka',sans-serif;
+  font-size:16px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; }
+
+.pink-features{ margin-top:24px; display:flex; flex-direction:column; gap:0; }
+.pink-feat{ display:flex; align-items:center; gap:16px; padding:15px 0; border-bottom:1px dashed rgba(104,112,90,.28); }
+.pink-feat:last-child{ border-bottom:0; }
+
+.pink-feat-icon{ flex:0 0 58px; width:58px; height:58px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  background:radial-gradient(circle at 35% 30%, #F7F3ED, var(--beige)); color:var(--olive); font-size:24px;
+  box-shadow:inset 0 0 0 1px rgba(104,112,90,.10); }
+
+.pink-feat-body{ flex:1; padding-top:1px; }
+.pink-feat-title{ font-family:'Fredoka',sans-serif; font-size:15.5px; font-weight:700; line-height:1.2; color:var(--olive-dark); text-transform:uppercase; letter-spacing:.01em; }
+.pink-feat-desc{ margin-top:3px; font-size:13.5px; font-weight:600; line-height:1.35; color:var(--muted); }
+
+.pink-bottom{ margin-top:auto; padding-top:26px; display:flex; flex-direction:column; align-items:stretch; gap:14px; }
+
+/* Precio con acento tipo "trazo de pincel" — border-radius orgánico
+   en vez de clip-path (clip-path no se captura bien con html2canvas). */
+.pink-price-wrap{ position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:16px 20px; text-align:center; }
+.pink-price-brush{ position:absolute; inset:-6px -14px; z-index:0; opacity:.9;
+  background:linear-gradient(100deg,var(--beige),var(--nude));
+  border-radius:42% 58% 55% 45% / 50% 45% 55% 50%; transform:rotate(-3deg); }
 .pink-price-wrap > *{ position:relative; z-index:1; }
-.pink-price-label{ font-family:'Fredoka',sans-serif; font-weight:700; font-size:15px; color:#B22F63; letter-spacing:.05em; }
-.pink-price-value{ font-family:'Fredoka',sans-serif; font-weight:700; font-size:48px; line-height:1; color:#241F26; margin-top:2px; }
+.pink-price-label{ font-family:'Fredoka',sans-serif; font-size:14px; font-weight:600; color:var(--olive); text-transform:uppercase; letter-spacing:.08em; }
+.pink-price-value{ margin-top:2px; font-family:'Fredoka',sans-serif; font-size:46px; font-weight:700; line-height:.95; color:var(--olive-dark); }
 
-.pink-price-stack{ display:flex; flex-direction:column; gap:10px; }
-.pink-price-blob{ position:relative; background:linear-gradient(135deg, #E24E86, #B22F63); color:#fff; border-radius:20px; padding:14px 26px; box-shadow:0 14px 22px rgba(178,47,99,.28); }
-.pink-price-blob.alt{ background:linear-gradient(135deg, #7a6230, #4a3a1c); }
-.pink-price-blob.small{ padding:12px 22px; }
-.pink-price-blob .pink-price-label{ color:#fff; opacity:.9; }
-.pink-price-blob .pink-price-value{ color:#fff; font-size:28px; }
+/* Modo "Menudeo + Mayoreo" (no venía en la referencia, se agregó con la misma paleta) */
+.pink-price-stack{ display:flex; gap:12px; }
+.pink-price-blob{ position:relative; flex:1; padding:14px 16px; text-align:center; border-radius:20px;
+  background:linear-gradient(135deg, var(--olive), var(--olive-dark)); box-shadow:0 14px 22px rgba(48,53,44,.20); }
+.pink-price-blob.alt{ background:linear-gradient(135deg, #B8926A, #7A5F3E); }
+.pink-price-blob .pink-price-label{ color:#fff; opacity:.85; }
+.pink-price-blob .pink-price-value{ color:#fff; font-size:24px; margin-top:2px; }
 
-.pink-cta{ flex:1; min-width:230px; background:#241F26; color:#fff; font-family:'Fredoka',sans-serif; font-weight:600; font-size:17px;
-  text-align:center; padding:18px 20px; border-radius:999px; display:flex; align-items:center; justify-content:center; gap:10px; }
+.pink-cta{ position:relative; width:100%; display:flex; align-items:center; justify-content:center; gap:10px;
+  padding:17px 22px; border-radius:999px; background:linear-gradient(135deg,var(--olive),var(--olive-dark)); color:#fff;
+  font-family:'Fredoka',sans-serif; font-size:16.5px; font-weight:600; text-align:center; box-shadow:0 13px 24px rgba(48,53,44,.22); }
 .pink-cta .ic{ font-size:20px; }
 
-.pink-strip{ position:relative; z-index:1; margin-top:34px; background:#fff; border-top:1px solid #FBD9E6; padding:24px 46px; display:flex; flex-wrap:wrap; gap:18px; justify-content:space-between; }
-.pink-strip-item{ display:flex; align-items:center; gap:10px; font-size:13px; font-weight:800; color:#6b6570; text-transform:uppercase; letter-spacing:.02em; }
-.pink-strip-item .ic{ font-size:24px; color:#B22F63; }
+.pink-strip{ position:relative; z-index:3; margin-top:0; padding:18px 46px; display:flex; align-items:center; justify-content:space-around;
+  gap:8px; background:linear-gradient(90deg,#E7DDD0,#F3EEE6,#E5D8C9); border-top:1px solid rgba(104,112,90,.13); flex-wrap:wrap; }
+.pink-strip-item{ flex:1; min-width:120px; display:flex; align-items:center; justify-content:center; gap:8px; padding:4px 10px;
+  font-size:11px; font-weight:800; line-height:1.25; text-align:center; color:var(--olive-dark); text-transform:uppercase; }
+.pink-strip-item:not(:last-child){ border-right:1px solid rgba(104,112,90,.18); }
+.pink-strip-item .ic{ flex:0 0 auto; color:var(--olive); font-size:22px; }
 
 /* ---------- OLIVO ---------- */
 .tpl-olivo{ background:#F6F2E7; position:relative; overflow:hidden; border-radius:6px; font-family:'Manrope', sans-serif; color:#3E4A2C; }
@@ -708,8 +761,6 @@ const TEMPLATE_CSS = `
 /* ---------- CAFÉ / VINTAGE ---------- */
 .tpl-vintage{ background:#EFE6D8; position:relative; overflow:hidden; border-radius:6px; font-family:'Nunito', sans-serif; color:#3E2F23;
   border:9px solid #EFE6D8; box-shadow:inset 0 0 0 1.5px #C7B393; }
-/* Marco doble: uno sólido pegado al borde (arriba, vía box-shadow) y uno
-   punteado más adentro -> look de tarjeta postal antigua. */
 .vint-frame{ position:absolute; inset:16px; border:1px dashed #C7B393; border-radius:2px; }
 .vint-frame-inner{ position:absolute; inset:20px; border:1px solid rgba(184,134,11,.35); border-radius:2px; }
 .vint-header{ position:relative; padding:52px 58px 0 58px; display:flex; align-items:flex-start; gap:24px; }
