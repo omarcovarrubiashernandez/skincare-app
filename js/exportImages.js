@@ -327,8 +327,6 @@ function buildCardHTML(p, mode, template, imgUrl) {
   // así que "estira" exactamente hasta la altura que define la columna
   // de contenido -> la foto siempre llena su espacio, sin huecos.
   return `
-    <div class="pink-blob-a"></div>
-    <div class="pink-blob-b"></div>
     <div class="pink-main">
       <div class="pink-photo-col">
         <div class="pink-photo-frame">
@@ -609,16 +607,17 @@ const TEMPLATE_CSS = `
 
 /* ---------- ROSA (rediseñada) ---------- */
 .tpl-rosa{
-  background:#FFFFFF; position:relative; overflow:hidden; border-radius:10px;
+  /* El toque rosado ahora es parte del background-image de la propia
+     tarjeta (sin divs extra posicionados con offsets negativos). Esto
+     evita por completo el bug que inflaba el tamaño exportado y dejaba
+     franjas en blanco a la derecha/abajo. */
+  background:
+    radial-gradient(circle at 100% 0%, #FBD9E6 0%, transparent 34%),
+    radial-gradient(circle at 0% 100%, #FCE6EE 0%, transparent 30%),
+    #FFFFFF;
+  position:relative; overflow:hidden; border-radius:10px;
   font-family:'Nunito', sans-serif; color:#241F26;
 }
-
-/* Manchas decorativas: SIEMPRE detrás del contenido (z-index:0) y sin
-   afectar el layout, para que nunca tapen texto ni precio. */
-.pink-blob-a{ position:absolute; top:-70px; right:-90px; width:260px; height:260px; border-radius:50%;
-  background:radial-gradient(circle at 30% 30%, #FBD9E6 0%, #FBD9E6 55%, transparent 72%); opacity:.9; z-index:0; }
-.pink-blob-b{ position:absolute; bottom:-90px; left:-50px; width:200px; height:200px; border-radius:50%;
-  background:radial-gradient(circle at 60% 60%, #FCE6EE 0%, #FCE6EE 50%, transparent 70%); opacity:.75; z-index:0; }
 
 /* Fila principal: foto | contenido. align-items:stretch (default de
    flex) hace que la columna de la foto siempre iguale la altura real
@@ -626,7 +625,7 @@ const TEMPLATE_CSS = `
    ni a los lados, y la foto llena TODO su espacio. */
 .pink-main{ position:relative; z-index:1; display:flex; gap:30px; padding:46px 46px 0 46px; }
 
-.pink-photo-col{ flex:0 0 380px; position:relative; }
+.pink-photo-col{ flex:0 0 400px; position:relative; }
 .pink-photo-frame{ position:absolute; inset:0; border-radius:26px; overflow:hidden; background:#fff;
   box-shadow:0 26px 50px rgba(178,47,99,.20), 0 4px 10px rgba(0,0,0,.04); }
 .pink-photo-frame img{ width:100%; height:100%; object-fit:cover; object-position:center; }
