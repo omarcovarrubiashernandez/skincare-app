@@ -422,14 +422,14 @@ const TEMPLATE_CSS = `
 }
 
 .pink-photo-frame{ position:relative; width:100%; height:540px; overflow:hidden; border-radius:28px; background:#fff;
-  box-shadow:0 28px 54px rgba(48,53,44,.15), 0 8px 18px rgba(48,53,44,.06); transform:rotate(-2deg); }
+  border:1px solid rgba(48,53,44,.10); transform:rotate(-2deg); }
 .pink-photo-frame img{ width:100%; height:100%; display:block; object-fit:cover; object-position:center; }
 .pink-photo-shade{ position:absolute; inset:0; background:rgba(48,53,44,.06); }
 
 .pink-badge{ position:absolute; z-index:4; top:-6px; left:-4px; max-width:150px; text-align:center; padding:15px 18px;
-  border-radius:28px 30px 25px 34px; background:#F0E4D6; color:var(--olive-dark);
+  border-radius:26px; background:#F0E4D6; color:var(--olive-dark);
   font-family:'Caveat',cursive; font-size:23px; font-weight:700; line-height:1.05; transform:rotate(-7deg);
-  box-shadow:0 12px 22px rgba(48,53,44,.10); }
+  border:1px solid rgba(48,53,44,.08); }
 .pink-badge .ic{ color:var(--olive); }
 
 .pink-content-col{ flex:1; min-width:0; display:flex; flex-direction:column; padding-bottom:40px; }
@@ -447,7 +447,7 @@ const TEMPLATE_CSS = `
 
 .pink-feat-icon{ flex:0 0 58px; width:58px; height:58px; border-radius:50%; display:flex; align-items:center; justify-content:center;
   background:var(--beige); color:var(--olive); font-size:24px;
-  box-shadow:inset 0 0 0 1px rgba(104,112,90,.10); }
+  border:1px solid rgba(104,112,90,.10); }
 
 .pink-feat-body{ flex:1; padding-top:1px; }
 .pink-feat-title{ font-family:'Fredoka',sans-serif; font-size:15.5px; font-weight:700; line-height:1.2; color:var(--olive-dark); text-transform:uppercase; letter-spacing:.01em; }
@@ -458,21 +458,21 @@ const TEMPLATE_CSS = `
 .pink-price-wrap{ position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:16px 20px; text-align:center; }
 .pink-price-brush{ position:absolute; inset:-6px -14px; z-index:0; opacity:.9;
   background:var(--nude);
-  border-radius:42% 58% 55% 45% / 50% 45% 55% 50%; transform:rotate(-3deg); }
+  border-radius:24px; transform:rotate(-3deg); }
 .pink-price-wrap > *{ position:relative; z-index:1; }
 .pink-price-label{ font-family:'Fredoka',sans-serif; font-size:14px; font-weight:600; color:var(--olive); text-transform:uppercase; letter-spacing:.08em; }
 .pink-price-value{ margin-top:2px; font-family:'Fredoka',sans-serif; font-size:46px; font-weight:700; line-height:.95; color:var(--olive-dark); }
 
 .pink-price-stack{ display:flex; gap:12px; }
 .pink-price-blob{ position:relative; flex:1; padding:14px 16px; text-align:center; border-radius:20px;
-  background:var(--olive-dark); box-shadow:0 14px 22px rgba(48,53,44,.20); }
+  background:var(--olive-dark); }
 .pink-price-blob.alt{ background:#7A5F3E; }
 .pink-price-blob .pink-price-label{ color:#fff; opacity:.85; }
 .pink-price-blob .pink-price-value{ color:#fff; font-size:24px; margin-top:2px; }
 
 .pink-cta{ position:relative; width:100%; display:flex; align-items:center; justify-content:center; gap:10px;
   padding:17px 22px; border-radius:999px; background:var(--olive-dark); color:#fff;
-  font-family:'Fredoka',sans-serif; font-size:16.5px; font-weight:600; text-align:center; box-shadow:0 13px 24px rgba(48,53,44,.22); }
+  font-family:'Fredoka',sans-serif; font-size:16.5px; font-weight:600; text-align:center; }
 .pink-cta .ic{ font-size:20px; }
 
 .pink-strip{ position:relative; z-index:3; margin-top:0; padding:18px 46px; display:flex; align-items:center; justify-content:space-around;
