@@ -8,6 +8,18 @@
 // (import de efecto secundario — no exporta nada, solo define
 // window.exportImages y window.openExportImagesModal, que es lo que
 // usa el botón de la pantalla de Catálogo)
+//
+// ── CAMBIOS EN ESTA VERSIÓN (plantilla ROSA rediseñada) ──
+// La plantilla rosa se rediseñó por completo:
+//  - Layout de 2 columnas (foto | contenido) con altura igualada por
+//    flexbox (align-items:stretch), así la foto SIEMPRE llena su
+//    columna completa sin dejar espacio en blanco a los lados/abajo.
+//  - Se quitaron los círculos decorativos que tapaban el título y el
+//    precio (ahora van detrás, con z-index:0, y el contenido real
+//    nunca usa posiciones negativas que provocaban el "corte" arriba).
+//  - Precio con acento tipo "trazo de pincel" en vez del blob simple.
+//  - Cada característica ahora tiene un título corto en negritas +
+//    una descripción, como en la referencia.
 // ══════════════════════════════════════════════════════════════════
 
 import { state } from './state.js';
@@ -128,6 +140,19 @@ function buildFeatureItems(p) {
   return base.map(frase => ({ icon: pickIconKey(frase), text: frase }));
 }
 
+// Divide una frase de característica en un título corto (2-3 palabras,
+// en negritas/mayúsculas) + el resto como descripción, para imitar el
+// look "ícono + título + texto" de la referencia. Si la frase ya es
+// corta, se usa completa como título y no hay descripción.
+function splitFeatureText(text) {
+  const clean = (text || '').trim();
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length <= 4) return { title: clean, desc: '' };
+  const title = words.slice(0, 3).join(' ');
+  const desc = words.slice(3).join(' ');
+  return { title, desc };
+}
+
 function buildTagChips(p) {
   const chips = [];
   if (p.category) chips.push({ label: p.category, icon: 'leaf' });
@@ -189,6 +214,7 @@ function buildPriceHTML(p, mode, template) {
       </div>`;
   }
 
+  // ── ROSA ── (rediseñado: acento tipo "trazo de pincel" detrás del número)
   if (showAmbos) {
     return `
       <div class="pink-price-stack">
@@ -204,7 +230,8 @@ function buildPriceHTML(p, mode, template) {
   }
   const val = isMay ? p.priceMayoreo : p.price;
   return `
-    <div class="pink-price-blob">
+    <div class="pink-price-wrap">
+      <div class="pink-price-brush"></div>
       <div class="pink-price-label">${isMay ? 'MAYOREO' : '¡SOLO!'}</div>
       <div class="pink-price-value">${fmtMoney(val)}</div>
     </div>`;
@@ -294,32 +321,43 @@ function buildCardHTML(p, mode, template, imgUrl) {
     </div>`;
   }
 
+  // ── ROSA ── (rediseñado)
+  // 2 columnas con altura igualada por flexbox: la col. de la foto no
+  // tiene contenido propio con altura (solo un div position:absolute),
+  // así que "estira" exactamente hasta la altura que define la columna
+  // de contenido -> la foto siempre llena su espacio, sin huecos.
   return `
-    <div class="pink-header">
-      <div class="pink-tagline">Aplo<br>Blossom</div>
-      <div class="pink-brandblock">
+    <div class="pink-blob-a"></div>
+    <div class="pink-blob-b"></div>
+    <div class="pink-main">
+      <div class="pink-photo-col">
+        <div class="pink-photo-frame">
+          <img src="${imgUrl}" crossorigin="anonymous">
+          <div class="pink-photo-shade"></div>
+        </div>
+        <div class="pink-badge">Aplo<br>Blossom <span class="ic">${icon('heart')}</span></div>
+      </div>
+      <div class="pink-content-col">
         <div class="pink-brand">${nombre}</div>
-        ${subtitle ? `<div class="pink-sub">${subtitle}</div>` : ''}
+        ${subtitle ? `<div class="pink-sub-pill">${subtitle}</div>` : ''}
+        <div class="pink-features">
+          ${features.map(f => {
+            const { title, desc } = splitFeatureText(f.text);
+            return `
+            <div class="pink-feat">
+              <div class="pink-feat-icon"><span class="ic">${icon(f.icon)}</span></div>
+              <div class="pink-feat-body">
+                <div class="pink-feat-title">${esc(title)}</div>
+                ${desc ? `<div class="pink-feat-desc">${esc(desc)}</div>` : ''}
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+        <div class="pink-bottom">
+          ${priceHTML}
+          <div class="pink-cta"><span class="ic">${icon('chat')}</span>¡Envíame mensaje y pídelo hoy!</div>
+        </div>
       </div>
-    </div>
-    <div class="pink-body">
-      <div class="pink-photo-frame">
-        <div class="pink-tape"></div>
-        <img src="${imgUrl}" crossorigin="anonymous">
-        <div class="vignette"></div>
-      </div>
-      <div class="pink-features">
-        ${features.map((f, i) => `
-        ${i > 0 ? '<hr class="pink-divider">' : ''}
-        <div class="pink-feat">
-          <div class="pink-feat-icon"><span class="ic">${icon(f.icon)}</span></div>
-          <div class="pink-feat-desc">${esc(f.text)}</div>
-        </div>`).join('')}
-      </div>
-    </div>
-    <div class="pink-footer">
-      ${priceHTML}
-      <div class="pink-cta"><span class="ic">${icon('chat')}</span>¡Envíame mensaje y pídelo hoy!</div>
     </div>
     ${chips.length ? `
     <div class="pink-strip">
@@ -549,53 +587,78 @@ window.openExportImagesModal = function() {
 };
 
 // ──────────────────────────────────────────
-// 11. CSS de las dos plantillas
+// 11. CSS de las plantillas
 // ──────────────────────────────────────────
 const TEMPLATE_CSS = `
 .tpl-card{ width:900px; box-sizing:border-box; }
 .tpl-card *{ box-sizing:border-box; }
 
-/* ---------- ROSA ---------- */
+/* ---------- ROSA (rediseñada) ---------- */
 .tpl-rosa{
-  background:#FDF1F5; position:relative; overflow:hidden; border-radius:6px;
+  background:#FFFFFF; position:relative; overflow:hidden; border-radius:10px;
   font-family:'Nunito', sans-serif; color:#241F26;
 }
-.tpl-rosa::before{ content:""; position:absolute; top:-130px; right:-150px; width:440px; height:440px;
-  background:radial-gradient(circle at 30% 30%, #FBD9E6 0%, #FBD9E6 55%, transparent 72%); opacity:.9; }
-.tpl-rosa::after{ content:""; position:absolute; bottom:-160px; left:-120px; width:360px; height:360px;
-  background:radial-gradient(circle at 60% 60%, #FCE6EE 0%, #FCE6EE 50%, transparent 70%); opacity:.8; }
-.pink-header{ position:relative; padding:56px 60px 0 60px; display:flex; justify-content:space-between; align-items:flex-start; }
-.pink-tagline{ background:#fff; border:2px solid #FBD9E6; color:#B22F63; font-family:'Caveat', cursive; font-weight:700;
-  font-size:31px; line-height:1.08; padding:16px 24px; border-radius:20px; transform:rotate(-4deg);
-  box-shadow:0 8px 16px rgba(178,47,99,.14); max-width:200px; text-align:center; }
-.pink-brandblock{ text-align:right; max-width:520px; }
-.pink-brand{ font-family:'Fredoka', sans-serif; font-weight:700; font-size:46px; letter-spacing:-.5px; line-height:1.05; }
-.pink-sub{ font-family:'Fredoka', sans-serif; font-weight:600; font-size:24px; color:#E24E86; margin-top:8px; }
-.pink-body{ position:relative; display:flex; align-items:center; gap:20px; padding:36px 50px 0 50px; }
-.pink-photo-frame{ flex:0 0 430px; height:560px; background:#fff; border-radius:22px;
-  box-shadow:0 20px 44px rgba(178,47,99,.16), 0 4px 10px rgba(0,0,0,.04); position:relative; overflow:hidden; transform:rotate(-2deg); }
+
+/* Manchas decorativas: SIEMPRE detrás del contenido (z-index:0) y sin
+   afectar el layout, para que nunca tapen texto ni precio. */
+.pink-blob-a{ position:absolute; top:-130px; right:-150px; width:420px; height:420px; border-radius:50%;
+  background:radial-gradient(circle at 30% 30%, #FBD9E6 0%, #FBD9E6 55%, transparent 72%); opacity:.9; z-index:0; }
+.pink-blob-b{ position:absolute; bottom:-150px; left:-90px; width:320px; height:320px; border-radius:50%;
+  background:radial-gradient(circle at 60% 60%, #FCE6EE 0%, #FCE6EE 50%, transparent 70%); opacity:.75; z-index:0; }
+
+/* Fila principal: foto | contenido. align-items:stretch (default de
+   flex) hace que la columna de la foto siempre iguale la altura real
+   de la columna de contenido -> ya no queda espacio en blanco abajo
+   ni a los lados, y la foto llena TODO su espacio. */
+.pink-main{ position:relative; z-index:1; display:flex; gap:30px; padding:46px 46px 0 46px; }
+
+.pink-photo-col{ flex:0 0 380px; position:relative; }
+.pink-photo-frame{ position:absolute; inset:0; border-radius:26px; overflow:hidden; background:#fff;
+  box-shadow:0 26px 50px rgba(178,47,99,.20), 0 4px 10px rgba(0,0,0,.04); }
 .pink-photo-frame img{ width:100%; height:100%; object-fit:cover; object-position:center; }
-.pink-photo-frame .vignette{ position:absolute; inset:0; background:linear-gradient(180deg, rgba(253,241,245,0) 60%, rgba(253,241,245,.55) 100%); }
-.pink-tape{ position:absolute; top:-16px; left:50%; transform:translateX(-50%) rotate(-3deg); width:96px; height:36px; background:rgba(242,167,59,.55); border-radius:2px; z-index:2; }
-.pink-features{ flex:1; display:flex; flex-direction:column; gap:22px; }
-.pink-feat{ display:flex; align-items:flex-start; gap:18px; }
-.pink-feat-icon{ flex:0 0 58px; height:58px; border-radius:50%; background:#FBD9E6; display:flex; align-items:center; justify-content:center; color:#B22F63; font-size:26px; }
-.pink-feat-desc{ font-family:'Fredoka',sans-serif; font-weight:600; font-size:19px; line-height:1.35; padding-top:6px; }
-.pink-divider{ border:none; border-top:1.5px dashed #FBD9E6; margin:0; }
-.pink-footer{ position:relative; margin-top:32px; padding:0 50px 40px 50px; display:flex; align-items:center; gap:22px; }
-.pink-price-blob{ position:relative; background:linear-gradient(135deg, #E24E86, #B22F63); color:#fff; border-radius:26px; padding:20px 36px; box-shadow:0 16px 26px rgba(178,47,99,.30); }
-.pink-price-blob.alt{ background:linear-gradient(135deg, #7a6230, #4a3a1c); }
-.pink-price-blob.small{ padding:12px 24px; }
+.pink-photo-shade{ position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,0) 62%, rgba(178,47,99,.22) 100%); }
+.pink-badge{ position:absolute; top:18px; left:18px; z-index:2; background:#fff; border:2px solid #FBD9E6; color:#B22F63;
+  font-family:'Caveat', cursive; font-weight:700; font-size:24px; line-height:1.12; padding:12px 16px; border-radius:18px;
+  transform:rotate(-6deg); box-shadow:0 10px 18px rgba(178,47,99,.18); max-width:150px; text-align:center; }
+.pink-badge .ic{ font-size:18px; vertical-align:-2px; }
+
+.pink-content-col{ flex:1; display:flex; flex-direction:column; padding-bottom:46px; min-width:0; }
+.pink-brand{ font-family:'Fredoka', sans-serif; font-weight:700; font-size:42px; letter-spacing:-.5px; line-height:1.06; }
+.pink-sub-pill{ display:inline-block; align-self:flex-start; margin-top:14px; background:linear-gradient(135deg,#F5A9C4,#E24E86);
+  color:#fff; font-family:'Fredoka', sans-serif; font-weight:600; font-size:17px; padding:8px 20px; border-radius:999px; letter-spacing:.02em; }
+
+.pink-features{ margin-top:28px; display:flex; flex-direction:column; gap:20px; }
+.pink-feat{ display:flex; align-items:flex-start; gap:16px; }
+.pink-feat-icon{ flex:0 0 50px; height:50px; border-radius:50%; background:#FBD9E6; display:flex; align-items:center; justify-content:center; color:#B22F63; font-size:22px; }
+.pink-feat-body{ padding-top:3px; }
+.pink-feat-title{ font-family:'Fredoka',sans-serif; font-weight:700; font-size:16px; color:#B22F63; text-transform:uppercase; letter-spacing:.015em; line-height:1.25; }
+.pink-feat-desc{ font-family:'Nunito',sans-serif; font-weight:600; font-size:14.5px; color:#4b4550; line-height:1.4; margin-top:3px; }
+
+/* margin-top:auto empuja precio + botón hasta el fondo de la columna,
+   así siempre queda alineado con la parte baja de la foto. */
+.pink-bottom{ margin-top:auto; padding-top:26px; display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
+
+.pink-price-wrap{ position:relative; display:inline-flex; flex-direction:column; padding:12px 30px 12px 8px; }
+.pink-price-brush{ position:absolute; left:-16px; right:-8px; top:2px; bottom:2px; z-index:0; opacity:.85;
+  background:linear-gradient(100deg,#F7C6D9,#F3A9C6); border-radius:42% 58% 55% 45% / 50% 45% 55% 50%; transform:rotate(-3deg); }
+.pink-price-wrap > *{ position:relative; z-index:1; }
+.pink-price-label{ font-family:'Fredoka',sans-serif; font-weight:700; font-size:15px; color:#B22F63; letter-spacing:.05em; }
+.pink-price-value{ font-family:'Fredoka',sans-serif; font-weight:700; font-size:48px; line-height:1; color:#241F26; margin-top:2px; }
+
 .pink-price-stack{ display:flex; flex-direction:column; gap:10px; }
-.pink-price-label{ font-family:'Fredoka',sans-serif; font-size:15px; font-weight:600; opacity:.9; letter-spacing:.06em; }
-.pink-price-value{ font-family:'Fredoka',sans-serif; font-weight:700; font-size:54px; line-height:1; }
-.pink-price-value.small{ font-size:30px; }
-.pink-cta{ flex:1; background:#241F26; color:#fff; font-family:'Fredoka',sans-serif; font-weight:600; font-size:19px;
-  text-align:center; padding:21px 20px; border-radius:999px; display:flex; align-items:center; justify-content:center; gap:10px; }
-.pink-cta .ic{ font-size:22px; }
-.pink-strip{ position:relative; background:#fff; border-top:1px solid #FBD9E6; padding:26px 50px; display:flex; flex-wrap:wrap; gap:20px; justify-content:space-between; }
-.pink-strip-item{ display:flex; align-items:center; gap:11px; font-size:13.5px; font-weight:800; color:#6b6570; text-transform:uppercase; letter-spacing:.02em; }
-.pink-strip-item .ic{ font-size:27px; color:#B22F63; }
+.pink-price-blob{ position:relative; background:linear-gradient(135deg, #E24E86, #B22F63); color:#fff; border-radius:20px; padding:14px 26px; box-shadow:0 14px 22px rgba(178,47,99,.28); }
+.pink-price-blob.alt{ background:linear-gradient(135deg, #7a6230, #4a3a1c); }
+.pink-price-blob.small{ padding:12px 22px; }
+.pink-price-blob .pink-price-label{ color:#fff; opacity:.9; }
+.pink-price-blob .pink-price-value{ color:#fff; font-size:28px; }
+
+.pink-cta{ flex:1; min-width:230px; background:#241F26; color:#fff; font-family:'Fredoka',sans-serif; font-weight:600; font-size:17px;
+  text-align:center; padding:18px 20px; border-radius:999px; display:flex; align-items:center; justify-content:center; gap:10px; }
+.pink-cta .ic{ font-size:20px; }
+
+.pink-strip{ position:relative; z-index:1; margin-top:34px; background:#fff; border-top:1px solid #FBD9E6; padding:24px 46px; display:flex; flex-wrap:wrap; gap:18px; justify-content:space-between; }
+.pink-strip-item{ display:flex; align-items:center; gap:10px; font-size:13px; font-weight:800; color:#6b6570; text-transform:uppercase; letter-spacing:.02em; }
+.pink-strip-item .ic{ font-size:24px; color:#B22F63; }
 
 /* ---------- OLIVO ---------- */
 .tpl-olivo{ background:#F6F2E7; position:relative; overflow:hidden; border-radius:6px; font-family:'Manrope', sans-serif; color:#3E4A2C; }
