@@ -486,14 +486,28 @@ async function makeCardBlob(p, mode, template, imgUrl) {
   // pintada de NEGRO por el navegador. Ahora usamos el color de fondo real
   // de cada plantilla como respaldo, así aunque quede algún pixel de más
   // por redondeo, se ve del color correcto en vez de una franja negra.
+  // OJO: antes se usaba card.scrollWidth/scrollHeight para medir la
+  // tarjeta. El problema es que scrollWidth/scrollHeight SÍ cuentan el
+  // contenido que se desborda aunque el elemento tenga overflow:hidden
+  // (solo evitan la barra de scroll, no lo excluyen de la medición).
+  // Como las manchas decorativas de la plantilla rosa usan offsets
+  // negativos grandes (ej. top:-130px, width:420px), eso inflaba el
+  // tamaño "real" de la tarjeta mucho más allá de lo que se ve, y
+  // html2canvas terminaba capturando un lienzo gigante -> todo el
+  // espacio de más quedaba pintado con el color de fondo (por eso el
+  // borde/espacio en blanco enorme y la foto se veía "comprimida").
+  // offsetWidth/offsetHeight sí respetan el recorte visual real.
+  const cardW = card.offsetWidth;
+  const cardH = card.offsetHeight;
+
   const canvas = await window.html2canvas(card, {
     scale: 2,
     backgroundColor: TEMPLATE_BG[template] || '#ffffff',
     useCORS: true,
-    width: card.scrollWidth,
-    height: card.scrollHeight,
-    windowWidth: card.scrollWidth,
-    windowHeight: card.scrollHeight
+    width: cardW,
+    height: cardH,
+    windowWidth: cardW,
+    windowHeight: cardH
   });
 
   stage.removeChild(card);
@@ -601,9 +615,9 @@ const TEMPLATE_CSS = `
 
 /* Manchas decorativas: SIEMPRE detrás del contenido (z-index:0) y sin
    afectar el layout, para que nunca tapen texto ni precio. */
-.pink-blob-a{ position:absolute; top:-130px; right:-150px; width:420px; height:420px; border-radius:50%;
+.pink-blob-a{ position:absolute; top:-70px; right:-90px; width:260px; height:260px; border-radius:50%;
   background:radial-gradient(circle at 30% 30%, #FBD9E6 0%, #FBD9E6 55%, transparent 72%); opacity:.9; z-index:0; }
-.pink-blob-b{ position:absolute; bottom:-150px; left:-90px; width:320px; height:320px; border-radius:50%;
+.pink-blob-b{ position:absolute; bottom:-90px; left:-50px; width:200px; height:200px; border-radius:50%;
   background:radial-gradient(circle at 60% 60%, #FCE6EE 0%, #FCE6EE 50%, transparent 70%); opacity:.75; z-index:0; }
 
 /* Fila principal: foto | contenido. align-items:stretch (default de
