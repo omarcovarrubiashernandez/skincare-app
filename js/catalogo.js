@@ -1,16 +1,8 @@
-import { state } from './state.js';
+import { state, costoInsumos } from './state.js';
 import { fmtMoney, toast, showModal, icons, stripEmoji } from './utils.js';
 
-// Trae window.exportImages y window.openExportImagesModal (efecto
-// secundario — este archivo no exporta nada directamente, pero
-// catalog.js necesita que se ejecute para que el botón del catálogo
-// funcione).
 import './exportImages.js';
 
-// ══════════════════════════════════════════
-// DESCARGA — Blob + botón visible en modal
-// (export: exportImages.js también usa esta función)
-// ══════════════════════════════════════════
 window._downloadUrl = null;
 
 export function showDownloadModal(title, blob, filename) {
@@ -30,9 +22,6 @@ window._closeDownloadModal = function() {
   if (window._downloadUrl) { URL.revokeObjectURL(window._downloadUrl); window._downloadUrl = null; }
 };
 
-// ══════════════════════════════════════════
-// CATÁLOGO — vista principal
-// ══════════════════════════════════════════
 export function renderCatalog() {
   const inStock = state.products.filter(p => (p.stock || 0) > 0).length;
   return `
@@ -63,32 +52,25 @@ export function renderCatalog() {
   </div>`;
 }
 
-// ══════════════════════════════════════════
-// BUG FIX #1 — sanitizador de texto para jsPDF
-// ══════════════════════════════════════════
 function pdfSafe(str) {
   if (!str) return '';
   return String(str)
-    .replace(/[\u{1F1E6}-\u{1F1FF}]/gu, '')  // banderas
-    .replace(/[\u{1F300}-\u{1FAFF}]/gu, '')  // emoji principales
-    .replace(/[\u{2600}-\u{27BF}]/gu, '')    // símbolos/dingbats (☀ ✨ ❤ ✓...)
-    .replace(/[\u{2190}-\u{21FF}]/gu, '')    // flechas
-    .replace(/[\u{2B00}-\u{2BFF}]/gu, '')    // símbolos varios
-    .replace(/[\u{FE00}-\u{FE0F}]/gu, '')    // selectores de variación
-    .replace(/\u200D/g, '')                  // zero-width joiner
-    .replace(/[\u2018\u2019]/g, "'")         // comillas curvas simples
-    .replace(/[\u201C\u201D]/g, '"')         // comillas curvas dobles
-    .replace(/[\u2013\u2014]/g, '-')         // guiones en/em dash
-    .replace(/\u2026/g, '...')               // puntos suspensivos
-    .replace(/[^\x00-\xFF]/g, '')            // red de seguridad
+    .replace(/[\u{1F1E6}-\u{1F1FF}]/gu, '')
+    .replace(/[\u{1F300}-\u{1FAFF}]/gu, '')
+    .replace(/[\u{2600}-\u{27BF}]/gu, '')
+    .replace(/[\u{2190}-\u{21FF}]/gu, '')
+    .replace(/[\u{2B00}-\u{2BFF}]/gu, '')
+    .replace(/[\u{FE00}-\u{FE0F}]/gu, '')
+    .replace(/\u200D/g, '')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/\u2026/g, '...')
+    .replace(/[^\x00-\xFF]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-// ══════════════════════════════════════════
-// BUG FIX #2 — carga de imágenes con concurrencia limitada
-// (export: exportImages.js también usa esta función)
-// ══════════════════════════════════════════
 export async function loadImagesLimited(items, loaderFn, concurrency = 6) {
   const results = new Array(items.length);
   let idx = 0;
@@ -102,9 +84,6 @@ export async function loadImagesLimited(items, loaderFn, concurrency = 6) {
   return results;
 }
 
-// ══════════════════════════════════════════
-// EXPORTAR INVENTARIO — CSV
-// ══════════════════════════════════════════
 window.exportStockExcel = function() {
   if (!state.products.length) { toast('No hay productos', 'err'); return; }
   const headers = ['Nombre','Categoría','Tipo de piel','Cantidad','Unidad','Precio Menudeo ($)','Precio Mayoreo ($)','Costo ($)','Stock','Coreano','Mini','Descripción','Imagen (URL)'];
@@ -124,9 +103,6 @@ window.exportStockExcel = function() {
   toast('Inventario listo para descargar ✓');
 };
 
-// ══════════════════════════════════════════
-// EXPORTAR CATÁLOGO — PDF
-// ══════════════════════════════════════════
 window.exportCatalog = function(onlyInStock) {
   const prods = onlyInStock ? state.products.filter(p => (p.stock || 0) > 0) : state.products;
   if (!prods.length) { toast('Sin productos para exportar', 'err'); return; }
@@ -160,8 +136,8 @@ window.exportCatalog = function(onlyInStock) {
     if (metaClean) { doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(110, 110, 90); doc.text(metaClean, COL_NAME, tx); }
     let dtx = y + 5; doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(80, 78, 68);
     descLines.slice(0, 9).forEach(l => { doc.text(l, COL_DESC, dtx); dtx += 3.9; });
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(74, 82, 64); doc.text(fmtMoney(p.price), COL_PRICE, y + 7);
-    if (p.priceMayoreo) { doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(122, 98, 48); doc.text(fmtMoney(p.priceMayoreo), COL_MAY, y + 7); }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(74, 82, 64); doc.text(fmtMoney(p.price + costoInsumos), COL_PRICE, y + 7);
+    if (p.priceMayoreo) { doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(122, 98, 48); doc.text(fmtMoney(p.priceMayoreo + costoInsumos), COL_MAY, y + 7); }
     doc.setDrawColor(222, 214, 200); doc.line(ML, y + rowH, PW - MR, y + rowH); y += rowH; rowCount++;
   };
 
