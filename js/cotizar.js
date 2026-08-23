@@ -1,23 +1,17 @@
-import { state } from './state.js';
+import { state, costoInsumos } from './state.js';
 import { fmtMoney, toast, showModal, icons, CATS, SKINS } from './utils.js';
 import { addItem, updateItem, deleteItem } from './firebase.js';
 
-// ══════════════════════════════════════════
-// COTIZAR — con modo Mayoreo / Menudeo
-// ══════════════════════════════════════════
 let quoteSearch='',quoteCatFilter='Todos',quoteCatActive=false,quoteSkinFilter='',quoteSkinActive=false,quoteMlVal='',quoteMlUnit='';
 let quoteDiscount=0;
 let quoteKoreanOnly=false;
-let quotePriceMode='menudeo';   // 'menudeo' | 'mayoreo'
+let quotePriceMode='menudeo';
 
-// Carrito — exportado con binding vivo: main.js lo usa para el guard
-// del listener de 'quotes' (no pisar el carrito mientras se edita).
 export let cartItems = [];
 
-// Helper: precio según modo
 function getPriceForMode(p) {
-  if(quotePriceMode==='mayoreo') return p.priceMayoreo||p.price||0;
-  return p.price||0;
+  const base = quotePriceMode==='mayoreo' ? (p.priceMayoreo||p.price||0) : (p.price||0);
+  return base + (costoInsumos||0);
 }
 
 export function renderQuote() {
@@ -155,8 +149,8 @@ export function renderQuoteGrid() {
           <span style="color:${quotePriceMode==='mayoreo'?'#7a6230':'var(--olive)'};font-weight:700;font-size:13px;">${fmtMoney(displayPrice)}</span>
           <span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:20px;${(p.stock||0)===0?'background:#f0dada;color:var(--danger);':(p.stock||0)<=3?'background:#f0ead8;color:#7a6230;':'background:#daeadd;color:var(--success);'}">${p.stock||0}</span>
         </div>
-        ${hasMayoreo&&quotePriceMode==='menudeo'?`<div style="font-size:10px;color:#7a6230;margin-top:2px;">May: ${fmtMoney(p.priceMayoreo)}</div>`:''}
-        ${hasMayoreo&&quotePriceMode==='mayoreo'?`<div style="font-size:10px;color:var(--olive);margin-top:2px;">Men: ${fmtMoney(p.price)}</div>`:''}
+        ${hasMayoreo&&quotePriceMode==='menudeo'?`<div style="font-size:10px;color:#7a6230;margin-top:2px;">May: ${fmtMoney(p.priceMayoreo+costoInsumos)}</div>`:''}
+        ${hasMayoreo&&quotePriceMode==='mayoreo'?`<div style="font-size:10px;color:var(--olive);margin-top:2px;">Men: ${fmtMoney(p.price+costoInsumos)}</div>`:''}
       </div>
     </div>
   </div>`;}).join('')||`<div class="empty" style="grid-column:1/-1;">${icons.pkg}<p>Sin productos</p></div>`;
@@ -177,9 +171,6 @@ window._setPriceMode=function(mode){
   const c=document.getElementById('mainContent');c.innerHTML=renderQuote();renderQuoteGrid();
 };
 
-// Refresca solo la pestaña Cotizar. Simplificado respecto al original:
-// solo se llama desde acciones que únicamente pueden dispararse mientras
-// esta pestaña está visible (no requiere leer currentTab de main.js).
 function _refreshQuoteTab(){
   const c=document.getElementById('mainContent');
   if(!c) return;
@@ -187,7 +178,6 @@ function _refreshQuoteTab(){
   renderQuoteGrid();
 }
 
-// ── BUG FIX: guardamos category, isKorean e isMini en cada item del carrito ──
 window.addToCart=function(id){
   const p=state.products.find(x=>x.id===id);if(!p)return;
   const ex=cartItems.find(i=>i.id===id);
