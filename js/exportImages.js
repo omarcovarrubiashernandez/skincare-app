@@ -1,53 +1,11 @@
-// ══════════════════════════════════════════════════════════════════
-// exportImages.js
-// Módulo separado (antes vivía dentro de catalog.js) para que ese
-// archivo no crezca sin control. Todo lo relacionado a las tarjetas
-// de imagen (plantilla y export a .zip) vive aquí.
-//
-// catalog.js solo necesita: import './exportImages.js';
-// (import de efecto secundario — no exporta nada, solo define
-// window.exportImages y window.openExportImagesModal, que es lo que
-// usa el botón de la pantalla de Catálogo)
-//
-// ── CAMBIOS EN ESTA VERSIÓN (corrección del bloqueo al exportar) ──
-// Se detectaron dos causas del "se traba y no avanza el contador":
-//
-//  1) La versión anterior tenía modo "auto" que, para CADA producto,
-//     descargaba la imagen DOS veces: una para detectar el color
-//     dominante (elegir entre rosa/olivo/vintage) y otra para armar
-//     la tarjeta real. Eso duplicaba las peticiones a images.weserv.nl
-//     y multiplicaba el tiempo total y la probabilidad de que algo
-//     se quedara esperando.
-//
-//  2) html2canvas NO tiene timeout propio: si una imagen queda
-//     "tainted" por CORS o el proxy tarda demasiado, la promesa de
-//     html2canvas puede quedarse colgada para siempre, sin resolver
-//     ni rechazar. Como no había límite de tiempo, ese producto nunca
-//     terminaba y el contador dejaba de avanzar, y el ZIP nunca se
-//     generaba.
-//
-// Ahora solo existe UNA plantilla (verde olivo/nude — la que antes
-// era "rosa" y se rediseñó). Se eliminó por completo la detección de
-// color, así que cada producto se procesa una sola vez, y se agregó
-// un timeout real (Promise.race) tanto a la carga de imagen como a
-// html2canvas: si un producto tarda demasiado, se salta con un aviso
-// en consola en vez de trabar todo el lote.
-// ══════════════════════════════════════════════════════════════════
-
-import { state } from './state.js';
+import { state, costoInsumos } from './state.js';
 import { fmtMoney, toast, showModal, stripEmoji } from './utils.js';
 import { showDownloadModal, loadImagesLimited } from './catalogo.js';
 
-// ──────────────────────────────────────────
-// 1. CONFIG DE LA PLANTILLA (única)
-// ──────────────────────────────────────────
 const TEMPLATE_BG = '#F8F5EF';
 const IMAGE_LOAD_TIMEOUT_MS = 8000;
 const CANVAS_TIMEOUT_MS = 15000;
 
-// ──────────────────────────────────────────
-// 2. FUENTES E INYECCIÓN DE ESTILOS (una sola vez)
-// ──────────────────────────────────────────
 let _stylesReady = null;
 function ensureTemplateAssets() {
   if (_stylesReady) return _stylesReady;
@@ -74,7 +32,6 @@ function ensureTemplateAssets() {
   return _stylesReady;
 }
 
-// Contenedor oculto donde se arma cada tarjeta antes de capturarla.
 function ensureStage() {
   let stage = document.getElementById('_cardStage');
   if (!stage) {
@@ -92,9 +49,6 @@ function ensureStage() {
   return stage;
 }
 
-// Helper: le pone un límite de tiempo a cualquier promesa. Si se pasa
-// del tiempo, rechaza en vez de quedarse colgada para siempre (esto es
-// lo que faltaba y provocaba que todo el export se trabara).
 function withTimeout(promise, ms, label) {
   let timer;
   const timeout = new Promise((_, reject) => {
@@ -103,9 +57,6 @@ function withTimeout(promise, ms, label) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-// ──────────────────────────────────────────
-// 3. ÍCONOS (SVG en línea, un solo color)
-// ──────────────────────────────────────────
 const ICONS = {
   sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>',
   leaf: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20c8-1 14-7 15-15C11 6 5 12 4 20z"/><path d="M6 18c3-3 6-6 9-11"/></svg>',
@@ -129,9 +80,6 @@ function pickIconKey(text) {
 
 function icon(key) { return ICONS[key] || ICONS.sparkle; }
 
-// ──────────────────────────────────────────
-// 4. DATOS DERIVADOS DEL PRODUCTO
-// ──────────────────────────────────────────
 function getDescFrases(p) {
   const descClean = stripEmoji(p.description || '');
   return descClean ? descClean.split(/[.,;]/).map(s => s.trim()).filter(Boolean) : [];
@@ -143,8 +91,6 @@ function buildFeatureItems(p) {
   return base.map(frase => ({ icon: pickIconKey(frase), text: frase }));
 }
 
-// Divide una frase de característica en un título corto (2-3 palabras)
-// + el resto como descripción, para el look "ícono + título + texto".
 function splitFeatureText(text) {
   const clean = (text || '').trim();
   const words = clean.split(/\s+/).filter(Boolean);
@@ -173,9 +119,6 @@ function buildSubtitle(p, descFrases) {
   return subtitle;
 }
 
-// ──────────────────────────────────────────
-// 5. PRECIO
-// ──────────────────────────────────────────
 function buildPriceHTML(p, mode) {
   const hasMayoreo = p.priceMayoreo && p.priceMayoreo > 0;
   const showAmbos = mode === 'ambos' && hasMayoreo;
@@ -186,15 +129,15 @@ function buildPriceHTML(p, mode) {
       <div class="pink-price-stack">
         <div class="pink-price-blob">
           <div class="pink-price-label">MENUDEO</div>
-          <div class="pink-price-value">${fmtMoney(p.price)}</div>
+          <div class="pink-price-value">${fmtMoney(p.price + costoInsumos)}</div>
         </div>
         <div class="pink-price-blob alt">
           <div class="pink-price-label">MAYOREO</div>
-          <div class="pink-price-value">${fmtMoney(p.priceMayoreo)}</div>
+          <div class="pink-price-value">${fmtMoney(p.priceMayoreo + costoInsumos)}</div>
         </div>
       </div>`;
   }
-  const val = isMay ? p.priceMayoreo : p.price;
+  const val = (isMay ? p.priceMayoreo : p.price) + costoInsumos;
   return `
     <div class="pink-price-wrap">
       <div class="pink-price-brush"></div>
@@ -203,9 +146,6 @@ function buildPriceHTML(p, mode) {
     </div>`;
 }
 
-// ──────────────────────────────────────────
-// 6. ARMADO DEL HTML DE CADA TARJETA
-// ──────────────────────────────────────────
 function esc(str) {
   return String(str || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
@@ -255,9 +195,6 @@ function buildCardHTML(p, mode, imgUrl) {
     </div>` : ''}`;
 }
 
-// ──────────────────────────────────────────
-// 7. CAPTURA: HTML → imagen
-// ──────────────────────────────────────────
 async function makeCardBlob(p, mode, imgUrl) {
   const stage = ensureStage();
   const card = document.createElement('div');
@@ -270,7 +207,7 @@ async function makeCardBlob(p, mode, imgUrl) {
     await withTimeout(new Promise(resolve => {
       if (!imgEl || imgEl.complete) return resolve();
       imgEl.onload = resolve;
-      imgEl.onerror = resolve; // seguimos aunque la imagen falle: mejor tarjeta sin foto que trabar todo
+      imgEl.onerror = resolve;
     }), IMAGE_LOAD_TIMEOUT_MS, `carga imagen ${p.name || ''}`).catch(() => {});
 
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
@@ -307,9 +244,6 @@ function proxiedUrl(url) {
   return 'https://images.weserv.nl/?url=' + encodeURIComponent(url) + '&output=jpg&q=90';
 }
 
-// ──────────────────────────────────────────
-// 8. EXPORTAR — JSZip + showDownloadModal
-// ──────────────────────────────────────────
 window.exportImages = async function(priceMode = 'menudeo') {
   const prods = state.products.filter(p => p.image && (p.stock || 0) > 0);
   if (!prods.length) { toast('No hay productos con imagen en stock', 'err'); return; }
@@ -347,16 +281,13 @@ window.exportImages = async function(priceMode = 'menudeo') {
     console.error('Resumen de fallos. Primer error completo:', firstError);
   }
 
-  if (count === 0) return; // no generamos ZIP vacío
+  if (count === 0) return;
 
   const zipBlob = await zip.generateAsync({ type: 'blob' });
   const modeLabel = priceMode === 'ambos' ? 'ambos-precios' : priceMode;
   showDownloadModal(`ZIP listo (${count} imágenes)`, zipBlob, `catalogo-aploblossom-${modeLabel}.zip`);
 };
 
-// ──────────────────────────────────────────
-// 9. MODAL — solo elige el precio (ya no hay elección de diseño)
-// ──────────────────────────────────────────
 window.openExportImagesModal = function() {
   showModal('modalExportImg', `
     <div class="modal-header"><div class="modal-title">Exportar imágenes</div><button class="modal-close" onclick="closeModal('modalExportImg')">×</button></div>
@@ -383,9 +314,6 @@ window.openExportImagesModal = function() {
   `);
 };
 
-// ──────────────────────────────────────────
-// 10. CSS de la plantilla (verde olivo & nude)
-// ──────────────────────────────────────────
 const TEMPLATE_CSS = `
 .tpl-card{ width:900px; box-sizing:border-box; }
 .tpl-card *{ box-sizing:border-box; }
