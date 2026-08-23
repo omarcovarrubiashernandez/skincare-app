@@ -1,4 +1,4 @@
-import { state, lowStockThreshold } from './state.js';
+import { state, lowStockThreshold, costoInsumos, setCostoInsumos } from './state.js';
 import { fmtMoney, toast, showModal, icons, CATS, SKINS } from './utils.js';
 import { updateItem, deleteItem, addItem, db } from './firebase.js';
 
@@ -87,6 +87,16 @@ let editingProduct = null;
 
 export function renderInventory() {
   return `
+  <div class="card" style="padding:14px;margin-bottom:14px;background:var(--cream-dark);">
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-light);margin-bottom:8px;">
+      Costo fijo de insumos (se suma al precio en Cotizar y Catálogo)
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input id="costoInsumosInput" type="number" min="0" value="${costoInsumos}" placeholder="0"
+        style="flex:1;font-family:'Jost',sans-serif;font-size:14px;border:1.5px solid var(--cream-mid);border-radius:8px;padding:8px 12px;">
+      <button class="btn btn-primary btn-sm" onclick="window._saveCostoInsumos()">Guardar</button>
+    </div>
+  </div>
   <div style="display:flex;gap:10px;margin-bottom:10px;align-items:center;flex-wrap:wrap;">
     <div class="search-wrap" style="flex:1;min-width:200px;margin-bottom:0;">
       <svg class="search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -150,6 +160,7 @@ export function renderInvList() {
         ${p.priceMayoreo?`<span style="font-size:11px;color:#7a6230;font-weight:600;">May: ${fmtMoney(p.priceMayoreo)}</span>`:''}
         <span class="pill ${(p.stock||0)<=3?'pill-low':(p.stock||0)<=8?'pill-warn':'pill-ok'}">${p.stock||0} uds</span>
       </div>
+      ${costoInsumos>0?`<div style="font-size:11px;color:var(--text-light);width:100%;">+ insumos: ${fmtMoney((p.price||0)+costoInsumos)}</div>`:''}
     </div>
     <div class="product-actions">
       <button class="icon-btn" onclick="openStockModal('${p.id}')" title="Ajustar stock">${icons.stock}</button>
@@ -166,8 +177,16 @@ window._invMlUnit=v=>{invMlUnit=v;if(v)invFilterActive=true;renderInvList();};
 window._invMlClear=()=>{invMlVal='';invMlUnit='';renderInvList();};
 window._toggleKoreanFilter=()=>{invKoreanOnly=!invKoreanOnly;const c=document.getElementById('mainContent');c.innerHTML=renderInventory();renderInvList();};
 
+window._saveCostoInsumos = async function(){
+  const val = +document.getElementById('costoInsumosInput').value || 0;
+  await db.collection('config').doc('costoInsumos').set({value: val});
+  setCostoInsumos(val);
+  toast('Costo de insumos actualizado ✓');
+  window._renderCurrentTab?.();
+};
+
 // ══════════════════════════════════════════
-// MODAL DE PRODUCTO (con textarea de descripción corregido)
+// MODAL DE PRODUCTO
 // ══════════════════════════════════════════
 window.openProductModal = function(id) {
   editingProduct = id?state.products.find(p=>p.id===id):null;
@@ -394,7 +413,7 @@ window.saveKit=async function(id){
 };
 
 // ══════════════════════════════════════════
-// AJUSTAR STOCK (con botones +/- corregidos)
+// AJUSTAR STOCK
 // ══════════════════════════════════════════
 window.openStockModal=function(id){
   const p=state.products.find(x=>x.id===id);
