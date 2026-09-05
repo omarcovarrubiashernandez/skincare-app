@@ -82,21 +82,22 @@ function icon(key) { return ICONS[key] || ICONS.sparkle; }
 
 function getDescFrases(p) {
   const descClean = stripEmoji(p.description || '');
-  return descClean ? descClean.split(/[.,;]/).map(s => s.trim()).filter(Boolean) : [];
+  return descClean
+    ? descClean.split('\n').map(s => s.trim()).filter(Boolean)
+    : [];
 }
 
 function buildFeatureItems(p) {
   const frases = getDescFrases(p);
-  const base = (frases.length ? frases : [p.name || '']).slice(0, 4);
-  return base.map(frase => ({ icon: pickIconKey(frase), text: frase }));
+  return frases.map(frase => ({ icon: pickIconKey(frase), text: frase }));
 }
 
 function splitFeatureText(text) {
   const clean = (text || '').trim();
-  const words = clean.split(/\s+/).filter(Boolean);
-  if (words.length <= 4) return { title: clean, desc: '' };
-  const title = words.slice(0, 3).join(' ');
-  const desc = words.slice(3).join(' ');
+  const idx = clean.indexOf(':');
+  if (idx === -1) return { title: clean, desc: '' };
+  const title = clean.slice(0, idx).trim();
+  const desc = clean.slice(idx + 1).trim();
   return { title, desc };
 }
 
