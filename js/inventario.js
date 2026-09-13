@@ -193,7 +193,10 @@ window.openProductModal = function(id) {
   const p = editingProduct||{};
   showModal('modalProduct',`
     <div class="modal-header"><div class="modal-title">${id?'Editar producto':'Nuevo producto'}</div><button class="modal-close" onclick="closeModal('modalProduct')">×</button></div>
-    <label for="imgFileInput" class="img-upload" id="imgUploadLabel">
+    <label for="imgFileInput" class="img-upload" id="imgUploadLabel"
+      ondragover="window._handleImgDragOver(event)"
+      ondragleave="window._handleImgDragLeave(event)"
+      ondrop="window._handleImgDrop(event)">
       ${p.image ? `<img src="${p.image}" style="width:100%;height:100%;object-fit:cover;">` : `<div style="display:flex;flex-direction:column;align-items:center;gap:8px;">${icons.camera}<span>Subir foto</span></div>`}
     </label>
     <input type="file" id="imgFileInput" accept="image/*" style="display:none" onchange="window._handleImg(this)">
@@ -257,8 +260,7 @@ window._toggleSkin=function(s){
   else{chips.forEach(b=>{if(b.textContent==='Todo tipo')b.classList.remove('active');});chips.forEach(b=>{if(b.textContent===s)b.classList.toggle('active');});}
 };
 
-window._handleImg = async function(input) {
-  const file = input.files[0]; if(!file) return;
+async function uploadProductImage(file) {
   const label = document.getElementById('imgUploadLabel');
   label.innerHTML = `<span style="color:var(--text-light);font-size:13px;">⏳ Comprimiendo y subiendo...</span>`;
   try {
@@ -271,6 +273,31 @@ window._handleImg = async function(input) {
     label.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:8px;">${icons.camera}<span style="color:var(--danger);font-size:12px;">Error al subir — intenta de nuevo</span></div>`;
     toast('Error al subir imagen', 'err');
   }
+}
+
+window._handleImg = async function(input) {
+  const file = input.files[0]; if(!file) return;
+  uploadProductImage(file);
+};
+
+window._handleImgDragOver = function(e) {
+  e.preventDefault();
+  const label = document.getElementById('imgUploadLabel');
+  if (label) label.style.opacity = '0.6';
+};
+
+window._handleImgDragLeave = function() {
+  const label = document.getElementById('imgUploadLabel');
+  if (label) label.style.opacity = '';
+};
+
+window._handleImgDrop = function(e) {
+  e.preventDefault();
+  const label = document.getElementById('imgUploadLabel');
+  if (label) label.style.opacity = '';
+  const file = e.dataTransfer.files[0];
+  if (!file || !file.type.startsWith('image/')) { toast('Arrastra un archivo de imagen', 'err'); return; }
+  uploadProductImage(file);
 };
 
 window.saveProduct=async function(id){
