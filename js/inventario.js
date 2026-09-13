@@ -339,7 +339,10 @@ window.openKitModal=function(id){
   const selectedItems=k.kitItems?[...k.kitItems]:[];
   showModal('modalKit',`
     <div class="modal-header"><div class="modal-title">${id?'Editar kit':'Nuevo kit'}</div><button class="modal-close" onclick="closeModal('modalKit')">×</button></div>
-    <label for="kitImgInput" class="img-upload" id="kitImgUploadLabel">
+    <label for="kitImgInput" class="img-upload" id="kitImgUploadLabel"
+      ondragover="window._handleKitImgDragOver(event)"
+      ondragleave="window._handleKitImgDragLeave(event)"
+      ondrop="window._handleKitImgDrop(event)">
       ${k.image?`<img src="${k.image}" style="width:100%;height:100%;object-fit:cover;">`:`<div style="display:flex;flex-direction:column;align-items:center;gap:8px;">${icons.camera}<span>Foto del kit</span></div>`}
     </label>
     <input type="file" id="kitImgInput" accept="image/*" style="display:none" onchange="window._handleKitImg(this)">
@@ -403,8 +406,7 @@ window._addKitItem=function(id){if(!id)return;const ex=window._kitItems.find(i=>
 window._kitSearchInput=function(val){const dd=document.getElementById('kitSearchDropdown');if(!dd)return;const regularProds=state.products.filter(p=>!p.isKit);const q=val.trim().toLowerCase();const filtered=q?regularProds.filter(p=>(p.name||'').toLowerCase().includes(q)):regularProds;if(!filtered.length){dd.innerHTML='<div style="padding:10px 14px;font-size:13px;color:var(--text-light);">Sin resultados</div>';dd.style.display='block';return;}dd.innerHTML=filtered.slice(0,20).map(p=>`<div onmousedown="window._addKitItem('${p.id}')" style="padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--cream-mid);display:flex;justify-content:space-between;"><span>${p.name}</span><span style="font-size:11px;color:var(--text-light);">${p.stock||0} uds</span></div>`).join('');dd.style.display='block';};
 window._toggleKitSkin=function(s){const chips=document.querySelectorAll('#kitSkinChips .chip');if(s==='Todo tipo'||s==='No aplica'){chips.forEach(b=>b.classList.remove('active'));chips.forEach(b=>{if(b.textContent===s)b.classList.add('active');});}else{chips.forEach(b=>{if(b.textContent==='Todo tipo'||b.textContent==='No aplica')b.classList.remove('active');});chips.forEach(b=>{if(b.textContent===s)b.classList.toggle('active');});}};
 
-window._handleKitImg = async function(input) {
-  const file = input.files[0]; if(!file) return;
+async function uploadKitImage(file) {
   const label = document.getElementById('kitImgUploadLabel');
   label.innerHTML = `<span style="color:var(--text-light);font-size:13px;">⏳ Subiendo...</span>`;
   try {
@@ -417,6 +419,31 @@ window._handleKitImg = async function(input) {
     label.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:8px;">${icons.camera}<span style="color:var(--danger);font-size:12px;">Error</span></div>`;
     toast('Error al subir', 'err');
   }
+}
+
+window._handleKitImg = async function(input) {
+  const file = input.files[0]; if(!file) return;
+  uploadKitImage(file);
+};
+
+window._handleKitImgDragOver = function(e) {
+  e.preventDefault();
+  const label = document.getElementById('kitImgUploadLabel');
+  if (label) label.style.opacity = '0.6';
+};
+
+window._handleKitImgDragLeave = function() {
+  const label = document.getElementById('kitImgUploadLabel');
+  if (label) label.style.opacity = '';
+};
+
+window._handleKitImgDrop = function(e) {
+  e.preventDefault();
+  const label = document.getElementById('kitImgUploadLabel');
+  if (label) label.style.opacity = '';
+  const file = e.dataTransfer.files[0];
+  if (!file || !file.type.startsWith('image/')) { toast('Arrastra un archivo de imagen', 'err'); return; }
+  uploadKitImage(file);
 };
 
 window.saveKit=async function(id){
