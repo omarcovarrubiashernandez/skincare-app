@@ -2,6 +2,8 @@ import { state, costoInsumos } from './state.js';
 import { fmtMoney, toast, showModal, icons, stripEmoji } from './utils.js';
 
 import './exportImages.js';
+import './exportImages.js';
+import './editor-lote.js';
 
 window._downloadUrl = null;
 
@@ -32,6 +34,7 @@ export function renderCatalog() {
     <button class="btn btn-outline btn-full" onclick="exportCatalog(false)" style="padding:14px;font-size:15px;">📋 Exportar catálogo completo</button>
     <button class="btn btn-gold btn-full" onclick="openExportImagesModal()" style="padding:14px;font-size:15px;">🖼 Exportar imágenes (.zip)</button>
     <button class="btn btn-outline btn-full" onclick="exportStockExcel()" style="padding:14px;font-size:15px;">📊 Exportar inventario (.csv)</button>
+    <button class="btn btn-gold btn-full" onclick="openEditorLote()" style="padding:14px;font-size:15px;">✏️ Editar nombres y descripciones (.json)</button>
   </div>
   <div style="font-family:'Playfair Display',serif;font-size:18px;margin-bottom:14px;color:var(--text);">Vista previa</div>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;">
