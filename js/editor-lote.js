@@ -136,7 +136,7 @@ function leerArchivo(file, panel) {
   reader.readAsText(file);
 }
 
-// ── UI: botón flotante + panel ──────────────────────────────
+// ── UI: panel (se abre desde el botón del Catálogo) ──────────────────────────────
 function abrirPanel() {
   if (document.getElementById('editorLoteOverlay')) return;
   const ov = document.createElement('div');
@@ -173,15 +173,5 @@ function abrirPanel() {
   };
 }
 
-function montarBoton() {
-  if (document.getElementById('editorLoteBtn')) return;
-  const b = document.createElement('button');
-  b.id = 'editorLoteBtn';
-  b.textContent = '✎ Editar en lote';
-  b.style.cssText = 'position:fixed;right:12px;bottom:84px;z-index:9999;padding:8px 12px;border:0;border-radius:999px;background:#222;color:#fff;font-size:12px;opacity:.85;box-shadow:0 2px 8px rgba(0,0,0,.25)';
-  b.onclick = abrirPanel;
-  document.body.appendChild(b);
-}
-
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', montarBoton);
-else montarBoton();
+// Lo llama el botón del Catálogo: onclick="openEditorLote()"
+window.openEditorLote = abrirPanel;
