@@ -1,4 +1,4 @@
-import { state, lowStockThreshold, costoInsumos, setCostoInsumos } from './state.js';
+import { state, lowStockThreshold, costoInsumos, setCostoInsumos, computeKitCost } from './state.js';
 import { fmtMoney, toast, showModal, icons, CATS, SKINS } from './utils.js';
 import { updateItem, deleteItem, addItem, db } from './firebase.js';
 
@@ -457,7 +457,8 @@ window.saveKit=async function(id){
     description:document.getElementById('kitDesc').value,
     price:+document.getElementById('kitPrice').value||0,
     priceMayoreo:+document.getElementById('kitPriceMayoreo').value||0,
-    stock:+document.getElementById('kitStock').value||0,cost:0,
+    stock:+document.getElementById('kitStock').value||0,
+    cost:computeKitCost(window._kitItems),
     kitItems:[...window._kitItems],
     image:document.getElementById('kitImgData').value||''
   };
