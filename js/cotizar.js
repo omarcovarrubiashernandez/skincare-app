@@ -1,4 +1,4 @@
-import { state, costoInsumos } from './state.js';
+import { state, costoInsumos, computeKitCost } from './state.js';
 import { fmtMoney, toast, showModal, icons, CATS, SKINS } from './utils.js';
 import { addItem, updateItem, deleteItem } from './firebase.js';
 
@@ -187,7 +187,7 @@ window.addToCart=function(id){
     id:p.id,
     name:p.name,
     price:usePrice,
-    cost:p.cost||0,
+    cost:p.isKit?computeKitCost(p.kitItems):(p.cost||0),
     qty:1,
     priceMode:quotePriceMode,
     category:p.category||'',
