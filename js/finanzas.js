@@ -1,4 +1,4 @@
-import { state } from './state.js';
+import { state, computeKitCost } from './state.js';
 import { fmtMoney, toast, showModal, icons, EXPENSE_CATS } from './utils.js';
 import { addItem, deleteItem } from './firebase.js';
 
@@ -48,7 +48,7 @@ export function renderFinances() {
 
   // Valor total del inventario en almacén
   const valorInventarioVenta = state.products.reduce((s, p) => s + ((p.price || 0) * (p.stock || 0)), 0);
-  const valorInventarioCosto = state.products.reduce((s, p) => s + ((p.cost || 0) * (p.stock || 0)), 0);
+  const valorInventarioCosto = state.products.reduce((s, p) => s + ((p.isKit ? computeKitCost(p.kitItems) : (p.cost || 0)) * (p.stock || 0)), 0);
   const gananciaInventarioPendiente = valorInventarioVenta - valorInventarioCosto;
 
   // 2. RENTABILIDAD POR PRODUCTO Y CATEGORÍA
