@@ -1,6 +1,6 @@
 // Service worker de Aplo Blossom
 // Sube el número de versión cuando cambies archivos para forzar la actualización del caché.
-const VERSION = 'aplo-v1';
+const VERSION = 'aplo-v2';
 const SHELL = [
   './', './index.html', './styles.css',
   './js/main.js', './js/state.js', './js/utils.js', './js/firebase.js',
@@ -47,7 +47,15 @@ self.addEventListener('fetch', e => {
           if (res && (res.ok || res.type === 'opaque')) cache.put(req, res.clone());
           return res;
         })
-        .catch(() => cached);
+        .catch(async () => {
+          if (cached) return cached;
+          // Sin red y sin caché: para la página principal, intenta el index guardado
+          if (req.mode === 'navigate') {
+            const shell = await cache.match('./index.html', { ignoreSearch: true });
+            if (shell) return shell;
+          }
+          return Response.error();
+        });
       return cached || network;
     })
   );
