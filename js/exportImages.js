@@ -255,6 +255,9 @@ window.exportImages = async function(priceMode = 'menudeo') {
   let count = 0;
   let failed = 0;
   let firstError = null;
+  const usedNames = new Map();   // nombre base -> veces usado
+  const renamed = [];            // productos cuyo archivo se renombro por estar repetido
+  const sinImagen = state.products.filter(p => !p.image && (p.stock || 0) > 0);
 
   if (typeof window.html2canvas !== 'function') {
     toast('Error: html2canvas no está cargado en la página (revisa el <script> que lo incluye)', 'err');
@@ -266,7 +269,15 @@ window.exportImages = async function(priceMode = 'menudeo') {
     try {
       const imgUrl = proxiedUrl(p.image);
       const result = await makeCardBlob(p, priceMode, imgUrl);
-      if (result) { zip.file(result.fname, result.blob); count++; }
+      if (result) {
+        let fname = result.fname;
+        const base = fname.replace(/\.jpg$/i, '');
+        const n = (usedNames.get(base) || 0) + 1;
+        usedNames.set(base, n);
+        if (n > 1) { fname = `${base}_${n}.jpg`; renamed.push(p.name); }
+        zip.file(fname, result.blob);
+        count++;
+      }
       toast(`Procesando... ${count}/${prods.length}`);
     } catch (e) {
       failed++;
@@ -281,6 +292,12 @@ window.exportImages = async function(priceMode = 'menudeo') {
     toast(`${failed} producto(s) se saltaron por error o timeout${detail}`, 'err');
     console.error('Resumen de fallos. Primer error completo:', firstError);
   }
+
+  if (sinImagen.length) {
+    console.warn(`${sinImagen.length} producto(s) en stock SIN imagen (no entran al zip):`, sinImagen.map(p => p.name));
+    toast(`${sinImagen.length} producto(s) en stock no tienen imagen y se omitieron`, 'err');
+  }
+  if (renamed.length) console.info(`${renamed.length} archivo(s) tenian nombre repetido y se renombraron:`, renamed);
 
   if (count === 0) return;
 
