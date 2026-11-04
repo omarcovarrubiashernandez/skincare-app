@@ -1,12 +1,12 @@
 // Service worker de Aplo Blossom
 // Sube el número de versión cuando cambies archivos para forzar la actualización del caché.
-const VERSION = 'aplo-v2';
+const VERSION = 'aplo-v3';
 const SHELL = [
   './', './index.html', './styles.css',
   './js/main.js', './js/state.js', './js/utils.js', './js/firebase.js',
   './js/inventario.js', './js/catalogo.js', './js/cotizar.js', './js/ventas.js',
   './js/abonos.js', './js/finanzas.js', './js/reportes.js', './js/editor-lote.js',
-  './js/exportImages.js', './icons/icon-192.png', './icons/icon-512.png'
+  './js/exportImages.js', './js/importar-json.js', './icons/icon-192.png', './icons/icon-512.png'
 ];
 // Hosts de librerías/fuentes que sí vale la pena cachear para uso offline
 const CDN_HOSTS = [
