@@ -4,7 +4,8 @@ import { showDownloadModal, loadImagesLimited } from './catalogo.js';
 
 const TEMPLATE_BG = '#F8F5EF';
 const IMAGE_LOAD_TIMEOUT_MS = 8000;
-const CANVAS_TIMEOUT_MS = 15000;
+const CANVAS_TIMEOUT_MS = 25000;
+const CARD_SCALE = 2.5;   // 1000px de tarjeta x 2.5 = 2500px de ancho
 
 let _stylesReady = null;
 function ensureTemplateAssets() {
@@ -196,7 +197,38 @@ function buildCardHTML(p, mode, imgUrl) {
     </div>` : ''}`;
 }
 
-async function makeCardBlob(p, mode, imgUrl) {
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function proxiedUrl(url) {
+  return 'https://images.weserv.nl/?url=' + encodeURIComponent(url);
+}
+
+// Baja la foto como blob. Orden: directo -> proxy (con reintentos y espera).
+// El proxy limita cuando se piden muchas fotos seguidas; por eso antes salian tarjetas con la foto en blanco.
+async function fetchPhotoBlob(p) {
+  const one = async (url) => {
+    const res = await withTimeout(fetch(url), IMAGE_LOAD_TIMEOUT_MS, `descarga ${p.name || ''}`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+    if (!blob.size || !(blob.type || '').startsWith('image/')) throw new Error('respuesta sin imagen');
+    return blob;
+  };
+  const attempts = [
+    () => one(p.image),
+    () => one(proxiedUrl(p.image)),
+    async () => { await sleep(1200); return one(proxiedUrl(p.image)); },
+    async () => { await sleep(3000); return one(proxiedUrl(p.image)); }
+  ];
+  let lastErr;
+  for (const go of attempts) {
+    try { return await go(); } catch (e) { lastErr = e; }
+  }
+  throw new Error('No se pudo bajar la foto (' + (lastErr && lastErr.message) + ')');
+}
+
+async function makeCardBlob(p, mode) {
+  const photo = await fetchPhotoBlob(p);
+  const imgUrl = URL.createObjectURL(photo);
   const stage = ensureStage();
   const card = document.createElement('div');
   card.className = 'tpl-card tpl-rosa';
@@ -209,7 +241,9 @@ async function makeCardBlob(p, mode, imgUrl) {
       if (!imgEl || imgEl.complete) return resolve();
       imgEl.onload = resolve;
       imgEl.onerror = resolve;
-    }), IMAGE_LOAD_TIMEOUT_MS, `carga imagen ${p.name || ''}`).catch(() => {});
+    }), IMAGE_LOAD_TIMEOUT_MS, `carga imagen ${p.name || ''}`);
+    if (!imgEl || !imgEl.naturalWidth) throw new Error('la foto no cargó en la tarjeta');
+    if (imgEl.decode) { try { await imgEl.decode(); } catch (_) {} }
 
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
@@ -218,7 +252,7 @@ async function makeCardBlob(p, mode, imgUrl) {
 
     const canvas = await withTimeout(
       window.html2canvas(card, {
-        scale: 2,
+        scale: CARD_SCALE,
         backgroundColor: TEMPLATE_BG,
         useCORS: true,
         width: cardW,
@@ -232,64 +266,91 @@ async function makeCardBlob(p, mode, imgUrl) {
 
     return await new Promise(resolve => {
       canvas.toBlob(blob => {
-        const fname = (p.name || 'producto').replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g, '').trim().replace(/ +/g, '_');
-        resolve({ fname: fname + '.jpg', blob });
-      }, 'image/jpeg', 0.92);
+        canvas.width = 1; canvas.height = 1;   // libera memoria (importante en celular)
+        resolve({ fname: safeFileBase(p.name) + '.jpg', blob });
+      }, 'image/jpeg', 0.96);
     });
   } finally {
     stage.removeChild(card);
+    URL.revokeObjectURL(imgUrl);
   }
 }
 
-function proxiedUrl(url) {
-  return 'https://images.weserv.nl/?url=' + encodeURIComponent(url) + '&output=jpg&q=90';
+
+function safeFileBase(name) {
+  return (name || 'producto').replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g, '').trim().replace(/ +/g, '_') || 'producto';
 }
 
+// Foto ORIGINAL del producto (sin tarjeta, sin texto, sin recomprimir).
+async function fetchRawPhoto(p) {
+  const blob = await fetchPhotoBlob(p);
+  const t = (blob.type || '').toLowerCase();
+  const ext = t.includes('png') ? '.png' : t.includes('webp') ? '.webp' : '.jpg';
+  return { blob, ext };
+}
+
+function pickUniqueName(usedNames, base, ext, renamed, productName) {
+  const n = (usedNames.get(base) || 0) + 1;
+  usedNames.set(base, n);
+  if (n > 1) { renamed.push(productName); return `${base}_${n}${ext}`; }
+  return base + ext;
+}
+
+// mode: 'menudeo' | 'mayoreo' | 'ambos'  -> tarjeta con formato
+//       'foto'                           -> solo la foto original del producto
 window.exportImages = async function(priceMode = 'menudeo') {
   const prods = state.products.filter(p => p.image && (p.stock || 0) > 0);
   if (!prods.length) { toast('No hay productos con imagen en stock', 'err'); return; }
-  toast('Generando imágenes...');
-  await ensureTemplateAssets();
+  const rawOnly = priceMode === 'foto';
+
+  if (!rawOnly) {
+    if (typeof window.html2canvas !== 'function') {
+      toast('Error: html2canvas no está cargado en la página (revisa el <script> que lo incluye)', 'err');
+      console.error('window.html2canvas no es una función. Valor actual:', window.html2canvas);
+      return;
+    }
+    toast('Generando imágenes...');
+    await ensureTemplateAssets();
+  } else {
+    toast('Descargando fotos...');
+  }
 
   const zip = new (window.JSZip)();
   let count = 0;
   let failed = 0;
   let firstError = null;
+  const failedNames = [];
   const usedNames = new Map();   // nombre base -> veces usado
   const renamed = [];            // productos cuyo archivo se renombro por estar repetido
   const sinImagen = state.products.filter(p => !p.image && (p.stock || 0) > 0);
 
-  if (typeof window.html2canvas !== 'function') {
-    toast('Error: html2canvas no está cargado en la página (revisa el <script> que lo incluye)', 'err');
-    console.error('window.html2canvas no es una función. Valor actual:', window.html2canvas);
-    return;
-  }
-
   await loadImagesLimited(prods, async (p) => {
     try {
-      const imgUrl = proxiedUrl(p.image);
-      const result = await makeCardBlob(p, priceMode, imgUrl);
-      if (result) {
-        let fname = result.fname;
-        const base = fname.replace(/\.jpg$/i, '');
-        const n = (usedNames.get(base) || 0) + 1;
-        usedNames.set(base, n);
-        if (n > 1) { fname = `${base}_${n}.jpg`; renamed.push(p.name); }
-        zip.file(fname, result.blob);
+      if (rawOnly) {
+        const { blob, ext } = await fetchRawPhoto(p);
+        zip.file(pickUniqueName(usedNames, safeFileBase(p.name), ext, renamed, p.name), blob);
         count++;
+      } else {
+        const result = await makeCardBlob(p, priceMode);
+        if (result) {
+          const base = result.fname.replace(/\.jpg$/i, '');
+          zip.file(pickUniqueName(usedNames, base, '.jpg', renamed, p.name), result.blob);
+          count++;
+        }
       }
       toast(`Procesando... ${count}/${prods.length}`);
     } catch (e) {
       failed++;
+      failedNames.push(p.name);
       if (!firstError) firstError = { name: p.name, image: p.image, message: e && e.message };
       console.error(`No se pudo generar la imagen de "${p.name}" (URL original: ${p.image}):`, e);
       toast(`Procesando... ${count}/${prods.length}`);
     }
-  }, 4);
+  }, rawOnly ? 4 : 2);
 
   if (failed) {
-    const detail = firstError ? ` — primer error: "${firstError.message}" (producto: ${firstError.name})` : '';
-    toast(`${failed} producto(s) se saltaron por error o timeout${detail}`, 'err');
+    toast(`${failed} no se pudieron generar: ${failedNames.slice(0, 3).join(', ')}${failed > 3 ? '…' : ''}. Descárgalos con el icono ⬇ del inventario.`, 'err');
+    window._lastExportFailed = failedNames;
     console.error('Resumen de fallos. Primer error completo:', firstError);
   }
 
@@ -301,39 +362,62 @@ window.exportImages = async function(priceMode = 'menudeo') {
 
   if (count === 0) return;
 
-  const zipBlob = await zip.generateAsync({ type: 'blob' });
-  const modeLabel = priceMode === 'ambos' ? 'ambos-precios' : priceMode;
-  showDownloadModal(`ZIP listo (${count} imágenes)`, zipBlob, `catalogo-aploblossom-${modeLabel}.zip`);
+  // STORE = sin recomprimir: los JPG ya vienen comprimidos y asi el zip se arma mas rapido
+  const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+  const label = rawOnly ? 'fotos-originales' : (priceMode === 'ambos' ? 'ambos-precios' : priceMode);
+  showDownloadModal(`ZIP listo (${count} ${rawOnly ? 'fotos' : 'imágenes'})`, zipBlob, `aploblossom-${label}.zip`);
 };
 
-window.openExportImagesModal = function() {
+// Descarga UN solo producto (boton junto a cada producto en Inventario)
+window.downloadProductCard = async function(id, priceMode = 'menudeo') {
+  const p = state.products.find(x => x.id === id);
+  if (!p) return;
+  if (!p.image) { toast('Este producto no tiene imagen', 'err'); return; }
+  try {
+    if (priceMode === 'foto') {
+      toast('Descargando foto...');
+      const { blob, ext } = await fetchRawPhoto(p);
+      showDownloadModal('Foto lista', blob, safeFileBase(p.name) + ext);
+      return;
+    }
+    if (typeof window.html2canvas !== 'function') { toast('html2canvas no está cargado', 'err'); return; }
+    toast('Generando imagen...');
+    await ensureTemplateAssets();
+    const result = await makeCardBlob(p, priceMode);
+    showDownloadModal('Imagen lista', result.blob, result.fname);
+  } catch (e) {
+    console.error(`No se pudo generar la imagen de "${p.name}":`, e);
+    toast('No se pudo generar: ' + (e && e.message ? e.message : 'error'), 'err');
+  }
+};
+
+// Sin id -> exporta TODO el stock en .zip. Con id -> descarga solo ese producto.
+window.openExportImagesModal = function(productId) {
+  const one = typeof productId === 'string' && productId;
+  const p = one ? state.products.find(x => x.id === one) : null;
+  const run = (mode) => one
+    ? `closeModal('modalExportImg');downloadProductCard('${one}','${mode}')`
+    : `closeModal('modalExportImg');exportImages('${mode}')`;
+  const opt = (mode, title, sub, extra = '') => `
+      <button class="btn btn-outline btn-full" onclick="${run(mode)}" style="padding:14px;text-align:left;${extra}">
+        <div style="font-weight:600;">${title}</div>
+        <div style="font-size:12px;color:var(--text-light);">${sub}</div>
+      </button>`;
   showModal('modalExportImg', `
-    <div class="modal-header"><div class="modal-title">Exportar imágenes</div><button class="modal-close" onclick="closeModal('modalExportImg')">×</button></div>
+    <div class="modal-header"><div class="modal-title">${p ? esc(p.name) : 'Exportar imágenes (.zip)'}</div><button class="modal-close" onclick="closeModal('modalExportImg')">×</button></div>
 
-    <div style="font-size:13px;color:var(--text-light);margin-bottom:16px;">Elige qué precio mostrar en la imagen.</div>
+    <div style="font-size:13px;color:var(--text-light);margin-bottom:16px;">${p ? 'Elige qué descargar de este producto.' : 'Elige qué precio mostrar en la imagen, o descarga solo las fotos.'}</div>
     <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px;">
-
-      <button class="btn btn-outline btn-full" onclick="closeModal('modalExportImg');exportImages('menudeo')" style="padding:14px;text-align:left;">
-        <div style="font-weight:600;">Solo precio menudeo</div>
-        <div style="font-size:12px;color:var(--text-light);">Muestra el precio normal de venta</div>
-      </button>
-
-      <button class="btn btn-outline btn-full" onclick="closeModal('modalExportImg');exportImages('mayoreo')" style="padding:14px;text-align:left;border-color:#c8a86a;">
-        <div style="font-weight:600;color:#7a6230;">Solo precio mayoreo</div>
-        <div style="font-size:12px;color:var(--text-light);">Muestra el precio de mayoreo</div>
-      </button>
-
-      <button class="btn btn-primary btn-full" onclick="closeModal('modalExportImg');exportImages('ambos')" style="padding:14px;text-align:left;">
-        <div style="font-weight:600;">Menudeo + Mayoreo</div>
-        <div style="font-size:12px;color:rgba(245,240,232,.75);">Muestra ambos precios en la imagen para comparar</div>
-      </button>
-
+      ${opt('menudeo', 'Tarjeta · precio menudeo', 'Muestra el precio normal de venta')}
+      ${opt('mayoreo', 'Tarjeta · precio mayoreo', 'Muestra el precio de mayoreo', 'border-color:#c8a86a;')}
+      ${opt('ambos', 'Tarjeta · menudeo + mayoreo', 'Muestra ambos precios en la imagen')}
+      ${opt('foto', 'Solo la foto del producto', 'Foto original, sin tarjeta, sin texto, sin ml', 'border-style:dashed;')}
     </div>
   `);
 };
 
 const TEMPLATE_CSS = `
-.tpl-card{ width:900px; box-sizing:border-box; }
+.tpl-card{ width:1000px; box-sizing:border-box; }
 .tpl-card *{ box-sizing:border-box; }
 
 .tpl-rosa{
@@ -353,12 +437,12 @@ const TEMPLATE_CSS = `
   background: var(--cream);
 }
 
-.pink-main{ position:relative; z-index:2; display:flex; gap:38px; padding:44px 46px 0; }
+.pink-main{ position:relative; z-index:2; display:flex; gap:36px; padding:40px 42px 0; }
 
-.pink-photo-col{ flex:0 0 380px; position:relative; min-height:620px; display:flex; align-items:center; }
+.pink-photo-col{ flex:0 0 520px; position:relative; min-height:700px; display:flex; align-items:center; }
 
 .pink-photo-col::before{
-  content:""; position:absolute; width:340px; height:440px; left:-60px; top:60px; pointer-events:none;
+  content:""; position:absolute; width:380px; height:480px; left:-60px; top:60px; pointer-events:none;
   background:rgba(217,196,174,.38); border-radius:50%;
   transform:rotate(-18deg);
 }
@@ -367,12 +451,12 @@ const TEMPLATE_CSS = `
   border-radius:50%; bottom:25px; left:-10px; pointer-events:none;
 }
 
-.pink-photo-frame{ position:relative; width:100%; height:540px; overflow:hidden; border-radius:28px; background:#fff;
-  border:1px solid rgba(48,53,44,.10); transform:rotate(-2deg); }
+.pink-photo-frame{ position:relative; width:100%; height:660px; overflow:hidden; border-radius:28px; background:#fff;
+  border:1px solid rgba(48,53,44,.10); transform:rotate(-1.5deg); }
 .pink-photo-frame img{ width:100%; height:100%; display:block; object-fit:cover; object-position:center; }
 .pink-photo-shade{ position:absolute; inset:0; background:rgba(48,53,44,.06); }
 
-.pink-badge{ position:absolute; z-index:4; top:-6px; left:-4px; max-width:150px; text-align:center; padding:15px 18px;
+.pink-badge{ position:absolute; z-index:4; top:-6px; left:-4px; max-width:160px; text-align:center; padding:15px 18px;
   border-radius:26px; background:#F0E4D6; color:var(--olive-dark);
   font-family:'Caveat',cursive; font-size:23px; font-weight:700; line-height:1.05; transform:rotate(-7deg);
   border:1px solid rgba(48,53,44,.08); }
@@ -380,24 +464,24 @@ const TEMPLATE_CSS = `
 
 .pink-content-col{ flex:1; min-width:0; display:flex; flex-direction:column; padding-bottom:40px; }
 
-.pink-brand{ font-family:'Fredoka',sans-serif; font-size:44px; line-height:1.02; font-weight:700; letter-spacing:.3px;
+.pink-brand{ font-family:'Fredoka',sans-serif; font-size:32px; line-height:1.08; font-weight:700; letter-spacing:.3px;
   color:var(--olive-dark); text-transform:uppercase; }
 
-.pink-sub-pill{ display:inline-block; align-self:flex-start; margin-top:14px; padding:8px 20px; border-radius:999px;
+.pink-sub-pill{ display:inline-block; align-self:flex-start; margin-top:14px; padding:9px 22px; border-radius:999px;
   text-align:center; background:var(--nude); color:#fff; font-family:'Fredoka',sans-serif;
-  font-size:16px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; }
+  font-size:20px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; }
 
 .pink-features{ margin-top:24px; display:flex; flex-direction:column; gap:0; }
-.pink-feat{ display:flex; align-items:center; gap:16px; padding:15px 0; border-bottom:1px dashed rgba(104,112,90,.28); }
+.pink-feat{ display:flex; align-items:center; gap:16px; padding:14px 0; border-bottom:1px dashed rgba(104,112,90,.28); }
 .pink-feat:last-child{ border-bottom:0; }
 
-.pink-feat-icon{ flex:0 0 58px; width:58px; height:58px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+.pink-feat-icon{ flex:0 0 60px; width:60px; height:60px; border-radius:50%; display:flex; align-items:center; justify-content:center;
   background:var(--beige); color:var(--olive); font-size:24px;
   border:1px solid rgba(104,112,90,.10); }
 
 .pink-feat-body{ flex:1; padding-top:1px; }
-.pink-feat-title{ font-family:'Fredoka',sans-serif; font-size:15.5px; font-weight:700; line-height:1.2; color:var(--olive-dark); text-transform:uppercase; letter-spacing:.01em; }
-.pink-feat-desc{ margin-top:3px; font-size:13.5px; font-weight:600; line-height:1.35; color:var(--muted); }
+.pink-feat-title{ font-family:'Fredoka',sans-serif; font-size:21px; font-weight:700; line-height:1.18; color:var(--olive-dark); text-transform:uppercase; letter-spacing:.01em; }
+.pink-feat-desc{ margin-top:4px; font-size:18px; font-weight:600; line-height:1.32; color:var(--muted); }
 
 .pink-bottom{ margin-top:auto; padding-top:26px; display:flex; flex-direction:column; align-items:stretch; gap:14px; }
 
@@ -406,7 +490,7 @@ const TEMPLATE_CSS = `
   background:var(--nude);
   border-radius:24px; transform:rotate(-3deg); }
 .pink-price-wrap > *{ position:relative; z-index:1; }
-.pink-price-label{ font-family:'Fredoka',sans-serif; font-size:14px; font-weight:600; color:var(--olive); text-transform:uppercase; letter-spacing:.08em; }
+.pink-price-label{ font-family:'Fredoka',sans-serif; font-size:17px; font-weight:600; color:var(--olive); text-transform:uppercase; letter-spacing:.08em; }
 .pink-price-value{ margin-top:2px; font-family:'Fredoka',sans-serif; font-size:46px; font-weight:700; line-height:.95; color:var(--olive-dark); }
 
 .pink-price-stack{ display:flex; gap:12px; }
@@ -418,15 +502,15 @@ const TEMPLATE_CSS = `
 
 .pink-cta{ position:relative; width:100%; display:flex; align-items:center; justify-content:center; gap:10px;
   padding:17px 22px; border-radius:999px; background:var(--olive-dark); color:#fff;
-  font-family:'Fredoka',sans-serif; font-size:16.5px; font-weight:600; text-align:center; }
+  font-family:'Fredoka',sans-serif; font-size:18px; font-weight:600; text-align:center; }
 .pink-cta .ic{ font-size:20px; }
 
-.pink-strip{ position:relative; z-index:3; margin-top:0; padding:18px 46px; display:flex; align-items:center; justify-content:space-around;
+.pink-strip{ position:relative; z-index:3; margin-top:0; padding:20px 42px; display:flex; align-items:center; justify-content:space-around;
   gap:8px; background:#EFE4D5; border-top:1px solid rgba(104,112,90,.13); flex-wrap:wrap; }
 .pink-strip-item{ flex:1; min-width:120px; display:flex; align-items:center; justify-content:center; gap:8px; padding:4px 10px;
-  font-size:11px; font-weight:800; line-height:1.25; text-align:center; color:var(--olive-dark); text-transform:uppercase; }
+  font-size:14px; font-weight:800; line-height:1.25; text-align:center; color:var(--olive-dark); text-transform:uppercase; }
 .pink-strip-item:not(:last-child){ border-right:1px solid rgba(104,112,90,.18); }
-.pink-strip-item .ic{ flex:0 0 auto; color:var(--olive); font-size:22px; }
+.pink-strip-item .ic{ flex:0 0 auto; color:var(--olive); font-size:26px; }
 
 .ic{ display:inline-flex; width:1em; height:1em; vertical-align:-0.15em; }
 .ic svg{ width:100%; height:100%; }

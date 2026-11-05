@@ -20,6 +20,7 @@ import { renderReports } from './reportes.js';
 import { renderFinances } from './finanzas.js';
 import { renderCatalog } from './catalogo.js';
 import { renderCreditSales } from './abonos.js';
+import './importar-json.js';
 
 // ── TABS ──────────────────────────────────
 let currentTab = 0;

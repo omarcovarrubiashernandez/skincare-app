@@ -13,7 +13,7 @@ const R2_CONFIG = {
   publicUrl:   'https://pub-3d7d2139a4334439ae85eb5b2674f06d.r2.dev'
 };
 
-async function compressImage(file, maxPx = 1080, quality = 0.90) {
+async function compressImage(file, maxPx = 2000, quality = 0.92) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
@@ -103,6 +103,7 @@ export function renderInventory() {
       <input id="invSearch" value="${invSearch}" placeholder="Buscar producto..." oninput="window._invSearch(this.value)">
     </div>
     <div style="display:flex;gap:6px;flex-shrink:0;">
+      <button class="btn btn-outline btn-sm" onclick="openImportJsonModal()" style="border-radius:22px;" title="Pegar el JSON de un producto">Importar JSON</button>
       <button class="btn btn-outline btn-sm" onclick="openKitModal()" style="border-radius:22px;">Kit</button>
       <button class="btn btn-primary btn-sm" onclick="openProductModal(null)" style="border-radius:22px;display:flex;align-items:center;gap:6px;">${icons.plus} Nuevo</button>
     </div>
@@ -163,6 +164,7 @@ export function renderInvList() {
       ${costoInsumos>0?`<div style="font-size:11px;color:var(--text-light);width:100%;">+ insumos: ${fmtMoney((p.price||0)+costoInsumos)}</div>`:''}
     </div>
     <div class="product-actions">
+      ${p.image?`<button class="icon-btn" onclick="openExportImagesModal('${p.id}')" title="Descargar imagen de este producto">${icons.download}</button>`:''}
       <button class="icon-btn" onclick="openStockModal('${p.id}')" title="Ajustar stock">${icons.stock}</button>
       <button class="icon-btn" onclick="${p.isKit?`openKitModal('${p.id}')`:`openProductModal('${p.id}')`}" title="Editar">${icons.edit}</button>
     </div>
@@ -188,11 +190,15 @@ window._saveCostoInsumos = async function(){
 // ══════════════════════════════════════════
 // MODAL DE PRODUCTO
 // ══════════════════════════════════════════
-window.openProductModal = function(id) {
+window.openProductModal = function(id, prefill) {
   editingProduct = id?state.products.find(p=>p.id===id):null;
-  const p = editingProduct||{};
+  const p = editingProduct || prefill || {};
+  if (!id && !prefill && window._importReset) window._importReset();   // "Nuevo" normal: limpia cualquier importacion a medias
+  const importBar = (!id && prefill && window._importBarHTML) ? window._importBarHTML() : '';
+  const escA = v => String(v == null ? '' : v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   showModal('modalProduct',`
     <div class="modal-header"><div class="modal-title">${id?'Editar producto':'Nuevo producto'}</div><button class="modal-close" onclick="closeModal('modalProduct')">×</button></div>
+    ${importBar}
     <label for="imgFileInput" class="img-upload" id="imgUploadLabel"
       ondragover="window._handleImgDragOver(event)"
       ondragleave="window._handleImgDragLeave(event)"
@@ -201,7 +207,7 @@ window.openProductModal = function(id) {
     </label>
     <input type="file" id="imgFileInput" accept="image/*" style="display:none" onchange="window._handleImg(this)">
     <input type="hidden" id="pImgData" value="${p.image||''}">
-    <div class="field"><label>Nombre</label><input id="pName" value="${p.name||''}" placeholder="Nombre del producto"></div>
+    <div class="field"><label>Nombre</label><input id="pName" value="${escA(p.name)}" placeholder="Nombre del producto"></div>
     <div class="two-col">
       <div class="field"><label>Categoría</label><select id="pCat">${CATS.filter(c=>c!=='Todos'&&c!=='Kits').map(c=>`<option${p.category===c?' selected':''}>${c}</option>`).join('')}</select></div>
       <div class="field"><label>Tipo de piel</label>
@@ -237,7 +243,7 @@ window.openProductModal = function(id) {
       <label>Descripción (una idea por renglón)</label>
       <textarea id="pDesc" placeholder="Escribe una línea, presiona Enter para pasar a la siguiente..."
         style="width:100%;height:130px;font-family:'Jost',sans-serif;font-size:14px;border:1.5px solid var(--cream-mid);border-radius:var(--radius-sm);padding:10px 14px;line-height:1.6;resize:none;white-space:pre-wrap;box-sizing:border-box;outline:none;"
-      >${p.description||''}</textarea>
+      >${escA(p.description)}</textarea>
     </div>
     <div style="display:flex;align-items:center;gap:10px;padding:12px;background:var(--cream-dark);border-radius:var(--radius-sm);margin-bottom:10px;">
       <input type="checkbox" id="pIsKorean" ${p.isKorean?'checked':''} style="width:18px;height:18px;accent-color:var(--olive);cursor:pointer;">
@@ -321,6 +327,7 @@ window.saveProduct=async function(id){
   if(id){await updateItem('products',id,data);toast('Producto actualizado');}
   else{await addItem('products',data);toast('Producto agregado');}
   closeModal('modalProduct');
+  if(!id && window._importNext) window._importNext();
 };
 
 window.deleteProduct=async function(id){
